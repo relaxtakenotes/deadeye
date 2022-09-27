@@ -65,13 +65,17 @@ sound.Add( {
 
 
 local function toggle_deadeye()
-    in_deadeye = !in_deadeye
+	if not LocalPlayer():Alive() then
+		in_deadeye = false
+	else
+		in_deadeye = !in_deadeye
+	end
 
     net.Start("in_deadeye")
     	net.WriteBool(in_deadeye)
     net.SendToServer()
 
-    if not in_deadeye then 
+    if not in_deadeye and LocalPlayer():Alive() then 
 		LocalPlayer():EmitSound("deadeye_end")
 		LocalPlayer():StopLoopingSound(background_sfx_id)
     end
@@ -191,14 +195,19 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	ang.p = math.Clamp(ang.p, -89, 89)
 	cmd:SetViewAngles(ang)
 
+
 	if not in_deadeye then 
 		added_a_mark = false
 		deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer)
 		return 
 	end
 
-
 	deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer)
+
+	if not LocalPlayer():Alive() then
+		toggle_deadeye()
+	    return
+	end
 
 	// causes toggle_deadeye() to activate below
 	if deadeye_timer <= 0 and shooting_quota <= 0 and total_mark_count > 0 and not cmd:KeyDown(IN_ATTACK) then
@@ -229,6 +238,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		if added_a_mark then
 			toggle_deadeye()
 		end
+	end
+
+	if not LocalPlayer():GetActiveWeapon().Clip1 then 
+		toggle_deadeye()
+	    return 
 	end
 
 	// check if there are more marks than bullets and fill the quota if that's the case... or if we're attacking
