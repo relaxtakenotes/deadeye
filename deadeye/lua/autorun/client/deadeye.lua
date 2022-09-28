@@ -113,8 +113,8 @@ local function create_deadeye_point()
 
 	local lp = LocalPlayer()
 	local tr = lp:GetEyeTrace()
-	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then print("invalid target") return end
-	debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
+	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
+	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
 
 	added_a_mark = true
 	local pos, angle = get_hitbox_info(tr.Entity, tr.HitBox)
@@ -137,14 +137,14 @@ local function get_correct_mark_pos(ent, data)
 	// used to fill the mark cache
 
 	local pos, angle = get_hitbox_info(ent, data.hitbox_id)
-	debugoverlay.Cross(pos, 3, 0.1, Color(255, 0, 0), true)
+	//debugoverlay.Cross(pos, 3, 0.1, Color(255, 0, 0), true)
 
 	local corrected_relative_pos = Vector(data.relative_pos_to_hitbox.x, data.relative_pos_to_hitbox.y, data.relative_pos_to_hitbox.z)
 	corrected_relative_pos:Rotate(ent:GetAngles())
 	local corrected_pos = pos
 	if not deadeye_accurate:GetBool() then corrected_pos = corrected_pos - corrected_relative_pos end
 
-	debugoverlay.Line(pos, corrected_pos, 0.1, Color(50, 100, 255), true)
+	//debugoverlay.Line(pos, corrected_pos, 0.1, Color(50, 100, 255), true)
 	return corrected_pos
 end
 
@@ -182,8 +182,6 @@ end
 net.Receive("deadeye_firebullet", function(len)
 	if not in_deadeye then return end
 
-	print("received", CurTime())
-
 	local ent = net.ReadEntity()
 	local delay = net.ReadFloat()
 
@@ -193,9 +191,7 @@ net.Receive("deadeye_firebullet", function(len)
 	if table.Count(mark) <= 0 then return end
 	remove_mark(mark.entindex, mark.index)
 	release_attack = true
-	print(delay)
 	timer.Simple(delay, function()
-		print("waited for", delay)
 		release_attack = false
 	end)
 end)
@@ -241,7 +237,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			if not deadeye_cached_positions[entindex] then deadeye_cached_positions[entindex] = {} end
 			deadeye_cached_positions[entindex][i] = mark_cache
 
-			debugoverlay.Cross(mark_cache.pos, 3, 0.1, Color(255, 255, 255), true)
+			//debugoverlay.Cross(mark_cache.pos, 3, 0.1, Color(255, 255, 255), true)
 		end
 	end
 
