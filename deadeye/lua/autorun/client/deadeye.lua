@@ -1,3 +1,5 @@
+if not game.SinglePlayer() then print("[DEADEYE] Why are you playing in multiplayer? This mod doesn't work at all in multiplayer and opens up severe security vulnerabilities. This mod was disabled for your safety.") end
+
 local deadeye_marks = {} -- used to update the cache
 local deadeye_cached_positions = {} -- actual positions of the marks in real time
 local current_target = {} -- just the first mark
@@ -19,12 +21,15 @@ local max_deadeye_timer = 10
 local deadeye_timer_fraction = 1
 
 local background_sfx_id = 0
+local no_ammo_spent_timer = 0
+local previous_ammo_count = 0
 
 local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "0", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
 local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "0", {FCVAR_ARCHIVE}, "0 - bar, 1 - circular, like in the game", 0, 2)
 local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR_ARCHIVE}, "X axis offset", -9999, 9999)
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
+local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", mouse_sens:GetFloat(), {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -67,7 +72,8 @@ sound.Add( {
 
 
 local function toggle_deadeye()
-	if not LocalPlayer():Alive() then
+	local has_no_ammo = (LocalPlayer():GetActiveWeapon().Clip1 and LocalPlayer():GetActiveWeapon():Clip1() == 0)
+	if not LocalPlayer():Alive() or has_no_ammo then
 		in_deadeye = false
 	else
 		in_deadeye = !in_deadeye
@@ -77,7 +83,7 @@ local function toggle_deadeye()
     	net.WriteBool(in_deadeye)
     net.SendToServer()
 
-    if not in_deadeye and LocalPlayer():Alive() then 
+    if not in_deadeye and LocalPlayer():Alive() then
 		LocalPlayer():EmitSound("deadeye_end")
 		LocalPlayer():StopLoopingSound(background_sfx_id)
     end
@@ -135,7 +141,8 @@ local function get_correct_mark_pos(ent, data)
 
 	local corrected_relative_pos = Vector(data.relative_pos_to_hitbox.x, data.relative_pos_to_hitbox.y, data.relative_pos_to_hitbox.z)
 	corrected_relative_pos:Rotate(ent:GetAngles())
-	local corrected_pos = pos - corrected_relative_pos
+	local corrected_pos = pos
+	if not deadeye_accurate:GetBool() then corrected_pos = corrected_pos - corrected_relative_pos end
 
 	debugoverlay.Line(pos, corrected_pos, 0.1, Color(50, 100, 255), true)
 	return corrected_pos
@@ -186,7 +193,9 @@ net.Receive("deadeye_firebullet", function(len)
 	if table.Count(mark) <= 0 then return end
 	remove_mark(mark.entindex, mark.index)
 	release_attack = true
-	timer.Simple(delay, function() 
+	print(delay)
+	timer.Simple(delay, function()
+		print("waited for", delay)
 		release_attack = false
 	end)
 end)
@@ -246,12 +255,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 	end
 
-	if not LocalPlayer():GetActiveWeapon().Clip1 then 
-		toggle_deadeye()
-	    return 
-	end
+	local has_no_ammo = (LocalPlayer():GetActiveWeapon().Clip1 and LocalPlayer():GetActiveWeapon():Clip1() == 0)
 
-	if LocalPlayer():GetActiveWeapon():Clip1() <= 0 then
+	if has_no_ammo then
 		toggle_deadeye()
 	    return
 	end
@@ -266,8 +272,12 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		cmd:AddKey(IN_ATTACK)
 	end
 
-	if release_attack then
+	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
+	if release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0) then
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
+		no_ammo_spent_timer = 0
+	elseif shooting_quota > 0 and total_mark_count > 0 then
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + 20 * FrameTime(), 0, 1)
 	end
 
 	//print(total_mark_count, shooting_quota)
