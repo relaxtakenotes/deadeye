@@ -12,6 +12,7 @@ local release_attack = false
 
 local pp_lerp = 0
 local pp_fraction = 0.3
+local mark_brightness = {}
 
 local deadeye_timer = 10
 local max_deadeye_timer = 10
@@ -20,9 +21,10 @@ local deadeye_timer_fraction = 1
 local background_sfx_id = 0
 
 local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "0", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
-local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "0", {FCVAR_ARCHIVE}, "0 - seconds, 1 - percentage, 2 - just the bar", 0, 2)
+local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "0", {FCVAR_ARCHIVE}, "0 - bar, 1 - circular, like in the game", 0, 2)
 local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR_ARCHIVE}, "X axis offset", -9999, 9999)
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
+local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", mouse_sens:GetFloat(), {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -89,6 +91,7 @@ local function toggle_deadeye()
 	deadeye_cached_positions = {}
     shooting_quota = 0
     total_mark_count = 0
+    mark_brightness = {}
 end
 
 local function get_hitbox_info(ent, hitboxid)
@@ -115,6 +118,7 @@ local function create_deadeye_point()
 	data.relative_pos_to_hitbox = pos - tr.HitPos
 	// get rid of the current rotation so that we can rotate the point ourselves later
 	data.relative_pos_to_hitbox:Rotate(-tr.Entity:GetAngles())
+	data.brightness = 1
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -191,10 +195,12 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// update real view angle for silent aimbot
 	if (!ang) then ang = cmd:GetViewAngles() end
 	ang = ang + Angle(cmd:GetMouseY() * .023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), cmd:GetMouseX() * -.023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), 0)
+	if cmd:KeyDown(IN_ATTACK) and cmd:KeyDown(IN_USE) and LocalPlayer():GetActiveWeapon():GetClass() == "weapon_physgun" then
+		ang = cmd:GetViewAngles() -- physgun prop rotating causes desync with the actual view angle
+	end
 	ang.x = math.NormalizeAngle(ang.x)
 	ang.p = math.Clamp(ang.p, -89, 89)
 	cmd:SetViewAngles(ang)
-
 
 	if not in_deadeye then 
 		added_a_mark = false
@@ -235,7 +241,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// no more marks, reset the quota and turn off deadeye after we're done shooting
 	if total_mark_count <= 0 then
 		shooting_quota = 0
-		if added_a_mark then
+		if added_a_mark or deadeye_timer <= 0 then
 			toggle_deadeye()
 		end
 	end
@@ -243,6 +249,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	if not LocalPlayer():GetActiveWeapon().Clip1 then 
 		toggle_deadeye()
 	    return 
+	end
+
+	if LocalPlayer():GetActiveWeapon():Clip1() <= 0 then
+		toggle_deadeye()
+	    return
 	end
 
 	// check if there are more marks than bullets and fill the quota if that's the case... or if we're attacking
@@ -336,35 +347,56 @@ hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 	render.DrawScreenQuad()
 end)
 
-local material = Material("deadeye/deadeye_cross")
+local deadeye_cross = Material("deadeye/deadeye_cross")
+local deadeye_core = Material("deadeye/deadeye_core")
+local rpg_meter_track = {}
+rpg_meter_track[1] = Material("deadeye/rpg_meter_track_0")
+rpg_meter_track[2] = Material("deadeye/rpg_meter_track_1")
+rpg_meter_track[3] = Material("deadeye/rpg_meter_track_2")
+rpg_meter_track[4] = Material("deadeye/rpg_meter_track_3")
+rpg_meter_track[5] = Material("deadeye/rpg_meter_track_4")
+rpg_meter_track[6] = Material("deadeye/rpg_meter_track_5")
+rpg_meter_track[7] = Material("deadeye/rpg_meter_track_6")
+rpg_meter_track[8] = Material("deadeye/rpg_meter_track_7")
+rpg_meter_track[9] = Material("deadeye/rpg_meter_track_8")
+rpg_meter_track[10] = Material("deadeye/rpg_meter_track_9")
+
 hook.Add("HUDPaint", "deadeye_mark_render", function()
-	surface.SetDrawColor(255, 0, 0, 255)
-	surface.SetMaterial(material)
+	surface.SetMaterial(deadeye_cross)
 
 	for entindex, cache_table in pairs(deadeye_cached_positions) do
 		for i, mark in ipairs(cache_table) do
 			local pos2d = mark.pos:ToScreen()
+			// bruh
+			if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
+			if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
+			mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
+			local color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
+
+			surface.SetDrawColor(255, color_blink, color_blink, 255)
 			surface.DrawTexturedRect(pos2d.x-8, pos2d.y-8, 16, 16)
 		end
 	end
 
 	if draw_deadeye_bar:GetBool() then
-		surface.SetDrawColor(0, 0, 0, 128)
-		surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 150, 12)
-
-		surface.SetDrawColor(255, 255, 255, 128)
-		surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 150), 12)
-
 		if draw_deadeye_bar_style:GetInt() == 0 then
-			surface.SetFont("DermaDefault")
-			surface.SetTextColor(0, 0, 0)
-			surface.SetTextPos(36+deadeye_bar_offset_x:GetFloat(), ScrH()-251-deadeye_bar_offset_y:GetFloat())
-			surface.DrawText(string.format("%.2f",deadeye_timer))
-		elseif draw_deadeye_bar_style:GetInt() == 1 then
-			surface.SetFont("DermaDefault")
-			surface.SetTextColor(0, 0, 0)
-			surface.SetTextPos(36+deadeye_bar_offset_x:GetFloat(), ScrH()-251-deadeye_bar_offset_y:GetFloat())
-			surface.DrawText(string.format("%.2f",deadeye_timer/max_deadeye_timer*100).."%")
+			surface.SetDrawColor(0, 0, 0, 128)
+			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 150*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
+
+			surface.SetDrawColor(255, 255, 255, 128)
+			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
+		else
+			surface.SetMaterial(deadeye_core)
+			surface.SetDrawColor(255, 255, 255, 255)
+			surface.DrawTexturedRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 42*deadeye_bar_size:GetFloat(), 42*deadeye_bar_size:GetFloat())
+
+			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 10)
+			level = math.floor(level)
+
+			if level == 0 then return end
+			surface.SetMaterial(rpg_meter_track[level])
+			surface.SetDrawColor(255, 255, 255, 255)
+			surface.DrawTexturedRect(34-(5.5*deadeye_bar_size:GetFloat())+deadeye_bar_offset_x:GetFloat(), ScrH()-250-(5.5*deadeye_bar_size:GetFloat())-deadeye_bar_offset_y:GetFloat(), 53*deadeye_bar_size:GetFloat(), 53*deadeye_bar_size:GetFloat())
 		end
 	end
 end)

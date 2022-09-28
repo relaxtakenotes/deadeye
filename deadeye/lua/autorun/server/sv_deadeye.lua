@@ -43,8 +43,10 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 
 	if in_deadeye != in_deadeye_prev and in_deadeye then
 		zero_out_vars()
+		print("zerod")
 	elseif in_deadeye != in_deadeye_prev and not in_deadeye then
 		restore_vars()
+		print("restored")
 	end
 
 	in_deadeye_prev = in_deadeye
@@ -80,8 +82,9 @@ hook.Add("EntityFireBullets", "deadeye_firebullets", function(attacker, data)
 			if weapon:GetClass() == "mg_sniper_bullet" then
 				weapon = weapon:GetOwner():GetActiveWeapon()
 			end
+
 			local nextprimaryfire = weapon:GetNextPrimaryFire()
-			local newnextfire = CurTime() + math.Clamp((nextprimaryfire - CurTime()) * 0.3, 0.1, 1)
+			local newnextfire = CurTime() + math.abs(nextprimaryfire - CurTime()) * 0.3
 			print(nextprimaryfire - CurTime(), newnextfire - CurTime())
 			weapon:SetNextPrimaryFire(newnextfire)
 
