@@ -6,6 +6,9 @@ local current_target = {} -- just the first mark
 
 local ang
 
+local aimangles
+local old_aimangles
+
 local shooting_quota = 0
 local total_mark_count = 0
 local added_a_mark = false
@@ -30,6 +33,7 @@ local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
+//local deadeye_vm_aim = CreateConVar("cl_deadeye_viewmodel_aim", "1", {FCVAR_ARCHIVE}, "Viewmodel aim toggle.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", mouse_sens:GetFloat(), {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -98,6 +102,8 @@ local function toggle_deadeye()
     shooting_quota = 0
     total_mark_count = 0
     mark_brightness = {}
+    aimangles = nil
+    old_aimangles = nil
 end
 
 local function get_hitbox_info(ent, hitboxid)
@@ -112,7 +118,14 @@ local function create_deadeye_point()
 	if total_mark_count >= LocalPlayer():GetActiveWeapon():Clip1() then return end
 
 	local lp = LocalPlayer()
-	local tr = lp:GetEyeTrace()
+
+	local tr = util.TraceLine( {
+		start = LocalPlayer():EyePos(),
+		endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
+		filter = LocalPlayer(),
+		mask = MASK_SHOT_PORTAL
+	})
+
 	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
 	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
 
@@ -124,7 +137,6 @@ local function create_deadeye_point()
 	data.relative_pos_to_hitbox = pos - tr.HitPos
 	// get rid of the current rotation so that we can rotate the point ourselves later
 	data.relative_pos_to_hitbox:Rotate(-tr.Entity:GetAngles())
-	data.brightness = 1
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -286,7 +298,8 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	// deadeye aka aimbot
 	if current_target.entindex and cmd:KeyDown(IN_ATTACK) then
-		local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
+		old_aimangles = aimangles
+		aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
 		cmd:SetViewAngles(aimangles)
 		fix_movement(cmd, ang)
 	end
@@ -406,6 +419,22 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 		end
 	end
 end)
+
+/*
+local is_calc = false
+hook.Add("CalcViewModelView", "deadeye_viewmodel_aimbot", function(wep, vm, oldPos, oldAng, pos, ang)
+	if not aimangles or not deadeye_vm_aim:GetBool() or not in_deadeye then return end
+
+	if is_calc then return end
+	is_calc = true
+	local newPos, angles = hook.Run("CalcViewModelView", wep, vm, oldPos, oldAng, pos, ang) or {} 
+	is_calc = false
+
+	ang = aimangles
+
+	return newPos, ang
+end)
+*/
 
 concommand.Add("cl_deadeye_mark", create_deadeye_point)
 concommand.Add("cl_deadeye_clear", function() deadeye_marks = {} end)

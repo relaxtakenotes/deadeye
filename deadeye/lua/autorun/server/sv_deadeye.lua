@@ -37,6 +37,12 @@ local function restore_vars()
 	end
 end
 
+hook.Add("EntityTakeDamage", "deadeye_randommiss", function(ent, dmg)
+	if in_deadeye and ent:IsPlayer() and dmg:GetAttacker():IsNPC() then
+		if math.random(0,1) == 1 then return true end
+	end
+end)
+
 hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 	if in_deadeye then
 		ply:SetViewPunchAngles(Angle(0, 0, 0))
