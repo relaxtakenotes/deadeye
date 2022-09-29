@@ -14,6 +14,7 @@ local total_mark_count = 0
 local added_a_mark = false
 local in_deadeye = false
 local release_attack = false
+local spamming = false
 
 local pp_lerp = 0
 local pp_fraction = 0.3
@@ -33,6 +34,7 @@ local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
+local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
 //local deadeye_vm_aim = CreateConVar("cl_deadeye_viewmodel_aim", "1", {FCVAR_ARCHIVE}, "Viewmodel aim toggle.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
@@ -76,6 +78,9 @@ sound.Add( {
 
 
 local function toggle_deadeye()
+	if spamming then return end
+	spamming = true
+	timer.Simple(0.1, function() spamming = false end)
 	local has_no_ammo = (LocalPlayer():GetActiveWeapon().Clip1 and LocalPlayer():GetActiveWeapon():Clip1() == 0)
 	if not LocalPlayer():Alive() or has_no_ammo then
 		in_deadeye = false
@@ -221,11 +226,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	if not in_deadeye then 
 		added_a_mark = false
-		deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer)
+		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer) end
 		return 
 	end
 
-	deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer)
+	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer) end
 
 	if not LocalPlayer():Alive() then
 		toggle_deadeye()
@@ -402,20 +407,36 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			surface.SetDrawColor(0, 0, 0, 128)
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 150*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 
-			surface.SetDrawColor(255, 255, 255, 128)
+			if deadeye_infinite:GetBool() then 
+				surface.SetDrawColor(255, 190, 48, 128)
+			else
+				surface.SetDrawColor(255, 255, 255, 128)
+			end
+
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 		else
 			surface.SetMaterial(deadeye_core)
-			surface.SetDrawColor(255, 255, 255, 255)
+			if deadeye_infinite:GetBool() then 
+				surface.SetDrawColor(255, 190, 48, 255)
+			else
+				surface.SetDrawColor(255, 255, 255, 255)
+			end
 			surface.DrawTexturedRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 42*deadeye_bar_size:GetFloat(), 42*deadeye_bar_size:GetFloat())
 
 			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 10)
 			level = math.floor(level)
 
-			if level == 0 then return end
-			surface.SetMaterial(rpg_meter_track[level])
-			surface.SetDrawColor(255, 255, 255, 255)
-			surface.DrawTexturedRect(34-(5.5*deadeye_bar_size:GetFloat())+deadeye_bar_offset_x:GetFloat(), ScrH()-250-(5.5*deadeye_bar_size:GetFloat())-deadeye_bar_offset_y:GetFloat(), 53*deadeye_bar_size:GetFloat(), 53*deadeye_bar_size:GetFloat())
+			if level != 0 then
+				surface.SetMaterial(rpg_meter_track[level])
+
+				if deadeye_infinite:GetBool() then 
+					surface.SetDrawColor(255, 190, 48, 255)
+				else
+					surface.SetDrawColor(255, 255, 255, 255)
+				end
+
+				surface.DrawTexturedRect(34-(5.5*deadeye_bar_size:GetFloat())+deadeye_bar_offset_x:GetFloat(), ScrH()-250-(5.5*deadeye_bar_size:GetFloat())-deadeye_bar_offset_y:GetFloat(), 53*deadeye_bar_size:GetFloat(), 53*deadeye_bar_size:GetFloat())
+			end
 		end
 	end
 end)
