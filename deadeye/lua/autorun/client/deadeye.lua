@@ -369,11 +369,13 @@ hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 		pp_lerp = math.Clamp(pp_lerp - pp_fraction * 20 * FrameTime(), 0, 1)
 	end
 
-	DrawColorModify(tab)
-	render.UpdateScreenEffectTexture()
-	vignettemat:SetFloat("$alpha", pp_lerp)
-	render.SetMaterial(vignettemat)
-	render.DrawScreenQuad()
+	if pp_lerp > 0 then
+		DrawColorModify(tab)
+		render.UpdateScreenEffectTexture()
+		vignettemat:SetFloat("$alpha", pp_lerp)
+		render.SetMaterial(vignettemat)
+		render.DrawScreenQuad()
+	end
 end)
 
 local deadeye_cross = Material("deadeye/deadeye_cross")
@@ -391,19 +393,20 @@ rpg_meter_track[9] = Material("deadeye/rpg_meter_track_8")
 rpg_meter_track[10] = Material("deadeye/rpg_meter_track_9")
 
 hook.Add("HUDPaint", "deadeye_mark_render", function()
-	surface.SetMaterial(deadeye_cross)
+	if in_deadeye then
+		surface.SetMaterial(deadeye_cross)
+		for entindex, cache_table in pairs(deadeye_cached_positions) do
+			for i, mark in ipairs(cache_table) do
+				local pos2d = mark.pos:ToScreen()
+				// bruh
+				if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
+				if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
+				mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
+				local color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
 
-	for entindex, cache_table in pairs(deadeye_cached_positions) do
-		for i, mark in ipairs(cache_table) do
-			local pos2d = mark.pos:ToScreen()
-			// bruh
-			if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
-			if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
-			mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
-			local color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
-
-			surface.SetDrawColor(255, color_blink, color_blink, 255)
-			surface.DrawTexturedRect(pos2d.x-8, pos2d.y-8, 16, 16)
+				surface.SetDrawColor(255, color_blink, color_blink, 255)
+				surface.DrawTexturedRect(pos2d.x-8, pos2d.y-8, 16, 16)
+			end
 		end
 	end
 
