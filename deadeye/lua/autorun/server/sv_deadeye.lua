@@ -1,5 +1,6 @@
-if not game.SinglePlayer() then print("[DEADEYE] Why are you playing in multiplayer? This mod doesn't work at all in multiplayer and opens up severe security vulnerabilities. This mod was disabled for your safety.") end
-
+if not game.SinglePlayer() then 
+	return 
+end
 util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
 

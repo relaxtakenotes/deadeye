@@ -1,4 +1,9 @@
-if not game.SinglePlayer() then print("[DEADEYE] Why are you playing in multiplayer? This mod doesn't work at all in multiplayer and opens up severe security vulnerabilities. This mod was disabled for your safety.") end
+if not game.SinglePlayer() then 
+	hook.Add("InitPostEntity", "deadeye_warning", function() 
+		Derma_Message("Why are you playing in multiplayer?\nThis mod doesn't work at all in multiplayer and opens up severe security vulnerabilities.\nThis mod was disabled for your safety.\nDon't forget to change your mouse sensitivity if you have modified it!", "Deadeye", "wow frick u") 
+	end) 
+	return 
+end
 
 local deadeye_marks = {} -- used to update the cache
 local deadeye_cached_positions = {} -- actual positions of the marks in real time
