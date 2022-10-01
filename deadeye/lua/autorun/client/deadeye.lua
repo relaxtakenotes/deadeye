@@ -11,9 +11,6 @@ local current_target = {} -- just the first mark
 
 local ang
 
-local aimangles
-local old_aimangles
-
 local shooting_quota = 0
 local total_mark_count = 0
 local added_a_mark = false
@@ -25,8 +22,8 @@ local pp_lerp = 0
 local pp_fraction = 0.3
 local mark_brightness = {}
 
-local deadeye_timer = 10
-local max_deadeye_timer = 10
+local max_deadeye_timer = CreateConVar("cl_deadeye_timer", "10", {FCVAR_ARCHIVE}, "Timer, for you know what.", 1, 10000)
+local deadeye_timer = max_deadeye_timer:GetFloat()
 local deadeye_timer_fraction = 1
 
 local background_sfx_id = 0
@@ -40,10 +37,9 @@ local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
 local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
-//local deadeye_vm_aim = CreateConVar("cl_deadeye_viewmodel_aim", "1", {FCVAR_ARCHIVE}, "Viewmodel aim toggle.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
-local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", mouse_sens:GetFloat(), {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
+local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
 
 sound.Add( {
 	name = "deadeye_start",
@@ -112,8 +108,6 @@ local function toggle_deadeye()
     shooting_quota = 0
     total_mark_count = 0
     mark_brightness = {}
-    aimangles = nil
-    old_aimangles = nil
 end
 
 local function get_hitbox_info(ent, hitboxid)
@@ -159,14 +153,12 @@ local function get_correct_mark_pos(ent, data)
 	// used to fill the mark cache
 
 	local pos, angle = get_hitbox_info(ent, data.hitbox_id)
-	//debugoverlay.Cross(pos, 3, 0.1, Color(255, 0, 0), true)
 
 	local corrected_relative_pos = Vector(data.relative_pos_to_hitbox.x, data.relative_pos_to_hitbox.y, data.relative_pos_to_hitbox.z)
 	corrected_relative_pos:Rotate(ent:GetAngles())
 	local corrected_pos = pos
 	if not deadeye_accurate:GetBool() then corrected_pos = corrected_pos - corrected_relative_pos end
 
-	//debugoverlay.Line(pos, corrected_pos, 0.1, Color(50, 100, 255), true)
 	return corrected_pos
 end
 
@@ -229,13 +221,17 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	ang.p = math.Clamp(ang.p, -89, 89)
 	cmd:SetViewAngles(ang)
 
+	if max_deadeye_timer:GetFloat() <= 0 then
+		max_deadeye_timer:SetFloat(1)
+	end
+
 	if not in_deadeye then 
 		added_a_mark = false
-		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer) end
+		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer:GetFloat()) end
 		return 
 	end
 
-	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer) end
+	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer:GetFloat()) end
 
 	if not LocalPlayer():Alive() then
 		toggle_deadeye()
@@ -258,8 +254,6 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 			if not deadeye_cached_positions[entindex] then deadeye_cached_positions[entindex] = {} end
 			deadeye_cached_positions[entindex][i] = mark_cache
-
-			//debugoverlay.Cross(mark_cache.pos, 3, 0.1, Color(255, 255, 255), true)
 		end
 	end
 
@@ -301,15 +295,14 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	//print(total_mark_count, shooting_quota)
 
 	// do the silent aimbot shit
-	if (cmd:CommandNumber() == 0) then
+	if cmd:CommandNumber() == 0 then
 		cmd:SetViewAngles(ang)
 		return
 	end
 
 	// deadeye aka aimbot
 	if current_target.entindex and cmd:KeyDown(IN_ATTACK) then
-		old_aimangles = aimangles
-		aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
+		local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
 		cmd:SetViewAngles(aimangles)
 		fix_movement(cmd, ang)
 	end
@@ -410,6 +403,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 		end
 	end
 
+	// i'll improve the position calculations later :unaware:
 	if draw_deadeye_bar:GetBool() then
 		if draw_deadeye_bar_style:GetInt() == 0 then
 			surface.SetDrawColor(0, 0, 0, 128)
@@ -431,7 +425,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			end
 			surface.DrawTexturedRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 42*deadeye_bar_size:GetFloat(), 42*deadeye_bar_size:GetFloat())
 
-			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 10)
+			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 10)
 			level = math.floor(level)
 
 			if level != 0 then
@@ -449,28 +443,6 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 	end
 end)
 
-/*
-local is_calc = false
-hook.Add("CalcViewModelView", "deadeye_viewmodel_aimbot", function(wep, vm, oldPos, oldAng, pos, ang)
-	if not aimangles or not deadeye_vm_aim:GetBool() or not in_deadeye then return end
-
-	if is_calc then return end
-	is_calc = true
-	local newPos, angles = hook.Run("CalcViewModelView", wep, vm, oldPos, oldAng, pos, ang) or {} 
-	is_calc = false
-
-	ang = aimangles
-
-	return newPos, ang
-end)
-*/
-
 concommand.Add("cl_deadeye_mark", create_deadeye_point)
 concommand.Add("cl_deadeye_clear", function() deadeye_marks = {} end)
 concommand.Add("cl_deadeye_toggle", toggle_deadeye)
-concommand.Add("cl_deadeye_timer", function(ply,cmd,args)
-	if not args[1] then print("This command changes the deadeye timer. Default value is 10 seconds. Enter any value to change it.") return end
-	deadeye_timer = args[1]
-	max_deadeye_timer = args[1]
-	print("Changed deadeye timer to ", args[1])
-end)
