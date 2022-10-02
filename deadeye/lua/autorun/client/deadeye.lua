@@ -31,7 +31,7 @@ local no_ammo_spent_timer = 0
 local previous_ammo_count = 0
 
 local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "0", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
-local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "0", {FCVAR_ARCHIVE}, "0 - bar, 1 - circular, like in the game", 0, 2)
+local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "1", {FCVAR_ARCHIVE}, "0 - bar, 1 - circular, like in the game", 0, 2)
 local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR_ARCHIVE}, "X axis offset", -9999, 9999)
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
@@ -415,7 +415,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 				surface.SetDrawColor(255, 255, 255, 128)
 			end
 
-			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer, 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
+			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 		else
 			surface.SetMaterial(deadeye_core)
 			if deadeye_infinite:GetBool() then 
