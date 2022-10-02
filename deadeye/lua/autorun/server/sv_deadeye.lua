@@ -3,6 +3,7 @@ if not game.SinglePlayer() then
 end
 util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
+util.AddNetworkString("deadeye_primaryfire_time")
 
 local in_deadeye = false
 local in_deadeye_prev = false
@@ -59,7 +60,9 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 	in_deadeye_prev = in_deadeye
 end)
 
-hook.Add("EntityFireBullets", "deadeye_firebullets", function(attacker, data)
+hook.Add("EntityFireBullets", "deadeye_spread", function(attacker, data)
+	if not in_deadeye then return end
+
     local entity = NULL
     local weapon = NULL
     local weaponIsWeird = false
@@ -76,31 +79,19 @@ hook.Add("EntityFireBullets", "deadeye_firebullets", function(attacker, data)
         end
     end
 
-    if weaponIsWeird or not entity:IsPlayer() then return end
+    if weaponIsWeird then return end
 
-    if entity.de_shotThisTick == nil then entity.de_shotThisTick = false end
-    if entity.de_shotThisTick then return end
-    entity.de_shotThisTick = true
-    timer.Simple(engine.TickInterval()*2, function() entity.de_shotThisTick = false end) -- the most universal fix for fuckin penetration and ricochet
+    if entity:IsPlayer() then
+    	data.Spread = Vector(0,0,0)
+    	return true
+    end
+end)
 
-	if in_deadeye then
-		data.Spread = Vector(0,0,0)
-		timer.Simple(0, function()
-			if weapon:GetClass() == "mg_sniper_bullet" then
-				weapon = weapon:GetOwner():GetActiveWeapon()
-			end
-
-			local nextprimaryfire = weapon:GetNextPrimaryFire()
-			local newnextfire = CurTime() + math.abs(nextprimaryfire - CurTime()) * 0.3
-			weapon:SetNextPrimaryFire(newnextfire)
-
-			net.Start("deadeye_firebullet")
-			net.WriteEntity(entity)
-			net.WriteFloat(newnextfire - CurTime())
-			net.Send(entity)
-		end)
-		return true
-	end
+net.Receive("deadeye_primaryfire_time", function(len, ply) 
+	local weapon = ply:GetActiveWeapon()
+	local nextprimaryfire = weapon:GetNextPrimaryFire()
+	local newnextfire = CurTime() + math.abs(nextprimaryfire - CurTime()) * 0.3
+	weapon:SetNextPrimaryFire(newnextfire)
 end)
 
 net.Receive("in_deadeye", function(len,ply) 

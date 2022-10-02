@@ -18,6 +18,9 @@ local in_deadeye = false
 local release_attack = false
 local spamming = false
 
+local previous_ammo = 0
+local previous_wep = NULL
+
 local pp_lerp = 0
 local pp_fraction = 0.3
 local mark_brightness = {}
@@ -56,7 +59,7 @@ sound.Add( {
 	channel = CHAN_STATIC,
 	volume = 1.0,
 	level = 0,
-	pitch = 100,
+	pitch = {95,105},
 	sound = "deadeye/mark.wav"
 })
 
@@ -141,18 +144,20 @@ local function create_deadeye_point()
 
 	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
 
-	tr.HitPos = tr.HitPos + (tr.HitPos - tr.StartPos):GetNormalized() * 2
 	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
 
 	added_a_mark = true
 
 	local matrix = get_hitbox_matrix(tr.Entity, tr.HitBox)
+	tr.HitPos = tr.HitPos + (matrix:GetTranslation() - tr.HitPos):GetNormalized() + (tr.HitPos - tr.StartPos):GetNormalized() * 2
+
 	matrix:SetTranslation(matrix:GetTranslation() - tr.HitPos)
 
 	data = {}
 	data.hitbox_id = tr.HitBox
 	data.relative_pos_to_hitbox = matrix:GetTranslation()
-	data.relative_pos_to_hitbox:Rotate(-tr.Entity:GetAngles())
+	data.initial_rotation = tr.Entity:GetAngles()
+	data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -204,11 +209,15 @@ local function fix_movement(cmd, fa)
 	cmd:SetSideMove( math.sin( math.rad( yaw ) ) * vel )
 end
 
-net.Receive("deadeye_firebullet", function(len)
+
+local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
-	local ent = net.ReadEntity()
-	local delay = net.ReadFloat()
+	local weapon = ent:GetActiveWeapon()
+	net.Start("deadeye_primaryfire_time")
+	net.WriteBool(true)
+	net.SendToServer()
+	local delay = math.abs(weapon:GetNextPrimaryFire() - CurTime()) * 0.3
 
 	shooting_quota = shooting_quota - 1
 
@@ -219,6 +228,21 @@ net.Receive("deadeye_firebullet", function(len)
 	timer.Simple(delay, function()
 		release_attack = false
 	end)
+end
+
+hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd) 
+	local ply = LocalPlayer()
+	if not ply:Alive() then return end
+	local wep = ply:GetActiveWeapon()
+	if not wep then return end
+	if not wep.Clip1 then return end
+	local current_ammo = wep:Clip1()
+	if current_ammo < previous_ammo and not (wep != previous_wep) then
+		on_primary_attack(ply, wep)
+	end
+	
+	previous_ammo = current_ammo
+	previous_wep = wep
 end)
 
 hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
@@ -334,7 +358,15 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 		mask = MASK_SHOT_PORTAL,
 		filter = function(entity) if entity:GetClass() == "prop_ragdoll" then return true end end
 	})
+
 	if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
+		for entindex, data_table in pairs(deadeye_marks) do
+			for i, data in ipairs(data_table) do
+				data.relative_pos_to_hitbox:Rotate(data.initial_rotation)
+				data.initial_rotation = tr.Entity:GetAngles()
+				data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
+			end
+		end
 		deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
 		deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
 		found_ragdoll = true
