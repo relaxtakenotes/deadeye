@@ -37,7 +37,7 @@ local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
 local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
-local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled.", 0, 1)
+local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled. Also might be a bit wonky at times...", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -174,8 +174,8 @@ local function get_correct_mark_pos(ent, data)
 end
 
 local function remove_mark(entindex, index)
-	table.remove(deadeye_marks[entindex], index)
-	table.remove(deadeye_cached_positions[entindex], index)
+	if deadeye_marks[entindex] then table.remove(deadeye_marks[entindex], index) end
+	if deadeye_cached_positions[entindex] then table.remove(deadeye_cached_positions[entindex], index) end
 	total_mark_count = math.abs(total_mark_count - 1)
 end
 
