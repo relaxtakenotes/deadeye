@@ -41,6 +41,7 @@ local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
 local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
 local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled. Also might be a bit wonky at times...", 0, 1)
+local deadeye_vischeck = CreateConVar("cl_deadeye_vischeck", "0", {FCVAR_ARCHIVE}, "Stop wasting your ammo. I know that's how it's done in the game but just stop, okay?", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -337,6 +338,17 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	// deadeye aka aimbot
 	if current_target.entindex and cmd:KeyDown(IN_ATTACK) then
+		local tr = util.TraceLine( {
+			start = LocalPlayer():GetShootPos(),
+			endpos = current_target.pos,
+			filter = LocalPlayer(),
+			mask = MASK_SHOT_PORTAL
+		})
+
+		if deadeye_vischeck:GetBool() and tr.HitPos != current_target.pos and tr.Entity:EntIndex() != current_target.entindex then
+			if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
+		end
+
 		local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
 		cmd:SetViewAngles(aimangles)
 		fix_movement(cmd, ang)
