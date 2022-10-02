@@ -356,10 +356,10 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 		mins = Vector(-10, -10, -10),
 		maxs = Vector(10, 10, 10),
 		mask = MASK_SHOT_PORTAL,
-		filter = function(entity) if entity:GetClass() == "prop_ragdoll" then return true end end
+		filter = function(entity) if entity:GetClass() == "prop_ragdoll" and entity:GetModel() == model_name then return true end end
 	})
 
-	if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
+	if IsValid(tr.Entity) then
 		//for entindex, data_table in pairs(deadeye_marks) do
 		//	if entindex == tr.Entity:EntIndex() then
 		//		for i, data in ipairs(data_table) do
@@ -399,9 +399,10 @@ end)
 hook.Add("ChatText", "deadeye_hide_cvar_changes", function(index, name, text, type)
 	if type != "servermsg" then return end
 	if string.find(text, "sv_tfa_spread_multiplier") then return true end
+	if string.find(text, "sv_tfa_soundscale") then return true end
 end)
 
-hook.Add("InitPostEntity", "deadeye_chat_info", function() 
+hook.Add("InitPostEntity", "deadeye_stuff", function() 
 	LocalPlayer():ChatPrint("[IMPORTANT INFO FOR DEADEYE MOD] During deadeye, the mouse accuracy is reduced due to the method used to aim. To increase said accuracy, please change the sensitivity convar to higher values. If you need to actually change your mouse speed, please change the cl_deadeye_mouse_sensitivity convar")
 end)
 

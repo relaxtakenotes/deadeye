@@ -21,6 +21,7 @@ add_accuracy_var("arccw_mult_hipfire")
 add_accuracy_var("mgbase_sv_accuracy")
 add_accuracy_var("mgbase_sv_recoil")
 add_accuracy_var("sv_tfa_spread_multiplier")
+add_accuracy_var("sv_tfa_soundscale") // not actually an accuracy var but i just dont want weird audio shit happening
 
 local function zero_out_vars()
 	for key, convar in pairs(accuracy_vars) do
