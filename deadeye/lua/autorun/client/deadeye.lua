@@ -37,6 +37,7 @@ local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR
 local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE}, "Size multiplier", 0, 1000)
 local deadeye_accurate = CreateConVar("cl_deadeye_accurate", "0", {FCVAR_ARCHIVE}, "Instead of aiming at the [hitbox position + offset], aim just at the hitbox position.", 0, 1)
 local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
+local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -116,6 +117,12 @@ local function get_hitbox_info(ent, hitboxid)
 	return ent:GetBonePosition(ent:GetHitBoxBone(hitboxid, 0))
 end
 
+local function get_hitbox_matrix(ent, hitboxid)
+	// hitboxid from the trace
+	// ent is the entity related to it
+	return ent:GetBoneMatrix(ent:GetHitBoxBone(hitboxid, 0))
+end
+
 local function create_deadeye_point()
 	// deadeye_mark concommand
 	if not in_deadeye then return end
@@ -139,8 +146,6 @@ local function create_deadeye_point()
 	data = {}
 	data.hitbox_id = tr.HitBox
 	data.relative_pos_to_hitbox = pos - tr.HitPos
-	// get rid of the current rotation so that we can rotate the point ourselves later
-	data.relative_pos_to_hitbox:Rotate(-tr.Entity:GetAngles())
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -151,15 +156,15 @@ end
 
 local function get_correct_mark_pos(ent, data)
 	// used to fill the mark cache
+	// with proper rotations... more or less?
 
+	local matrix = get_hitbox_matrix(ent, data.hitbox_id)
 	local pos, angle = get_hitbox_info(ent, data.hitbox_id)
+	
+	matrix:SetTranslation(matrix:GetTranslation() - data.relative_pos_to_hitbox)
+	matrix:SetAngles(angle)
 
-	local corrected_relative_pos = Vector(data.relative_pos_to_hitbox.x, data.relative_pos_to_hitbox.y, data.relative_pos_to_hitbox.z)
-	corrected_relative_pos:Rotate(ent:GetAngles())
-	local corrected_pos = pos
-	if not deadeye_accurate:GetBool() then corrected_pos = corrected_pos - corrected_relative_pos end
-
-	return corrected_pos
+	return matrix:GetTranslation()
 end
 
 local function remove_mark(entindex, index)
@@ -308,13 +313,49 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	end
 end)
 
-hook.Add("EntityRemoved", "deadeye_cleanup", function(ent)
+hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
+	if not ent:IsNPC() or not deadeye_transfer_to_ragdolls:GetBool() then return end
+	local found_ragdoll = false
+	local entidx = ent:EntIndex()
+	local model_name = ent:GetModel()
+	local bonepos = ent:GetBonePosition(0)
+
+	timer.Simple(0, function() 		
+		local tr = util.TraceHull( {
+			start = bonepos,
+			endpos = bonepos,
+			mins = Vector( -10, -10, -10 ),
+			maxs = Vector( 10, 10, 10 ),
+			mask = MASK_SHOT_PORTAL,
+			filter = function(entity) if entity:GetClass() == "prop_ragdoll" then return true end end
+		})
+		if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
+			deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
+			deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
+			found_ragdoll = true
+		end
+
+		if total_mark_count > 0 and not found_ragdoll then
+			if not deadeye_marks[entidx] then return end
+			total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
+		end
+
+		deadeye_marks[entidx] = nil
+		deadeye_cached_positions[entidx] = nil
+	end)
+end)
+
+hook.Add("EntityRemoved", "deadeye_cleanup_classic", function(ent)
+	if not ent:IsNPC() or deadeye_transfer_to_ragdolls:GetBool() then return end
+	local entidx = ent:EntIndex()
+
 	if total_mark_count > 0 then
-		if not deadeye_marks[ent:EntIndex()] then return end
-		total_mark_count = total_mark_count - table.Count(deadeye_marks[ent:EntIndex()])
+		if not deadeye_marks[entidx] then return end
+		total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
 	end
-	deadeye_marks[ent:EntIndex()] = nil
-	deadeye_cached_positions[ent:EntIndex()] = nil
+
+	deadeye_marks[entidx] = nil
+	deadeye_cached_positions[entidx] = nil
 end)
 
 hook.Add("ChatText", "deadeye_hide_cvar_changes", function(index, name, text, type)
@@ -392,10 +433,15 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			for i, mark in ipairs(cache_table) do
 				local pos2d = mark.pos:ToScreen()
 				// bruh
-				if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
-				if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
-				mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
-				local color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
+				local color_blink
+				if Entity(entindex):GetClass() != "prop_ragdoll" then
+					if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
+					if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
+					mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
+					color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
+				else
+					color_blink = 0
+				end
 
 				surface.SetDrawColor(255, color_blink, color_blink, 255)
 				surface.DrawTexturedRect(pos2d.x-8, pos2d.y-8, 16, 16)
