@@ -360,15 +360,15 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 	})
 
 	if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
-		for entindex, data_table in pairs(deadeye_marks) do
-			if entindex == tr.Entity:EntIndex() then
-				for i, data in ipairs(data_table) do
-					data.relative_pos_to_hitbox:Rotate(data.initial_rotation)
-					data.initial_rotation = tr.Entity:GetAngles()
-					data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
-				end
-			end
-		end
+		//for entindex, data_table in pairs(deadeye_marks) do
+		//	if entindex == tr.Entity:EntIndex() then
+		//		for i, data in ipairs(data_table) do
+		//			//data.relative_pos_to_hitbox:Rotate(data.initial_rotation)
+		//			//data.initial_rotation = tr.Entity:GetAngles()
+		//			//data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
+		//		end
+		//	end
+		//end
 		deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
 		deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
 		found_ragdoll = true
