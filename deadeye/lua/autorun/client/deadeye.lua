@@ -139,7 +139,7 @@ local function create_deadeye_point()
 		mask = MASK_SHOT_PORTAL
 	})
 
-	if not IsValid(tr.Entity) then return end
+	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
 
 	tr.HitPos = tr.HitPos + (tr.HitPos - tr.StartPos):GetNormalized() * 2
 	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
