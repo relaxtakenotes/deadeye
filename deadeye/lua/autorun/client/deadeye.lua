@@ -114,13 +114,15 @@ end
 local function get_hitbox_info(ent, hitboxid)
 	// hitboxid from the trace
 	// ent is the entity related to it
-	return ent:GetBonePosition(ent:GetHitBoxBone(hitboxid, 0))
+	local set_number, set_string = ent:GetHitboxSet()
+	return ent:GetBonePosition(ent:GetHitBoxBone(hitboxid, set_number))
 end
 
 local function get_hitbox_matrix(ent, hitboxid)
 	// hitboxid from the trace
 	// ent is the entity related to it
-	return ent:GetBoneMatrix(ent:GetHitBoxBone(hitboxid, 0))
+	local set_number, set_string = ent:GetHitboxSet()
+	return ent:GetBoneMatrix(ent:GetHitBoxBone(hitboxid, set_number))
 end
 
 local function create_deadeye_point()
@@ -137,15 +139,20 @@ local function create_deadeye_point()
 		mask = MASK_SHOT_PORTAL
 	})
 
-	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
+	if not IsValid(tr.Entity) then return end
+
+	tr.HitPos = tr.HitPos + (tr.HitPos - tr.StartPos):GetNormalized() * 2
 	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
 
 	added_a_mark = true
-	local pos, angle = get_hitbox_info(tr.Entity, tr.HitBox)
+
+	local matrix = get_hitbox_matrix(tr.Entity, tr.HitBox)
+	matrix:SetTranslation(matrix:GetTranslation() - tr.HitPos)
 
 	data = {}
 	data.hitbox_id = tr.HitBox
-	data.relative_pos_to_hitbox = pos - tr.HitPos
+	data.relative_pos_to_hitbox = matrix:GetTranslation()
+	data.relative_pos_to_hitbox:Rotate(-tr.Entity:GetAngles())
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -157,12 +164,11 @@ end
 local function get_correct_mark_pos(ent, data)
 	// used to fill the mark cache
 	// with proper rotations... more or less?
-
 	local matrix = get_hitbox_matrix(ent, data.hitbox_id)
-	local pos, angle = get_hitbox_info(ent, data.hitbox_id)
-	
-	matrix:SetTranslation(matrix:GetTranslation() - data.relative_pos_to_hitbox)
-	matrix:SetAngles(angle)
+	local relative_pos = Vector(data.relative_pos_to_hitbox:Unpack())
+
+	relative_pos:Rotate(ent:GetAngles())
+	matrix:SetTranslation(matrix:GetTranslation() - relative_pos)
 
 	return matrix:GetTranslation()
 end
@@ -319,30 +325,28 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 	local entidx = ent:EntIndex()
 	local model_name = ent:GetModel()
 	local bonepos = ent:GetBonePosition(0)
+	
+	local tr = util.TraceHull( {
+		start = bonepos,
+		endpos = bonepos,
+		mins = Vector(-10, -10, -10),
+		maxs = Vector(10, 10, 10),
+		mask = MASK_SHOT_PORTAL,
+		filter = function(entity) if entity:GetClass() == "prop_ragdoll" then return true end end
+	})
+	if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
+		deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
+		deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
+		found_ragdoll = true
+	end
 
-	timer.Simple(0, function() 		
-		local tr = util.TraceHull( {
-			start = bonepos,
-			endpos = bonepos,
-			mins = Vector( -10, -10, -10 ),
-			maxs = Vector( 10, 10, 10 ),
-			mask = MASK_SHOT_PORTAL,
-			filter = function(entity) if entity:GetClass() == "prop_ragdoll" then return true end end
-		})
-		if IsValid(tr.Entity) and tr.Entity:GetModel() == model_name then
-			deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
-			deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
-			found_ragdoll = true
-		end
+	if total_mark_count > 0 and not found_ragdoll then
+		if not deadeye_marks[entidx] then return end
+		total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
+	end
 
-		if total_mark_count > 0 and not found_ragdoll then
-			if not deadeye_marks[entidx] then return end
-			total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
-		end
-
-		deadeye_marks[entidx] = nil
-		deadeye_cached_positions[entidx] = nil
-	end)
+	deadeye_marks[entidx] = nil
+	deadeye_cached_positions[entidx] = nil
 end)
 
 hook.Add("EntityRemoved", "deadeye_cleanup_classic", function(ent)
