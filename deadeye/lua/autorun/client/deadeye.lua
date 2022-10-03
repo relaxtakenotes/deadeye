@@ -51,7 +51,7 @@ sound.Add( {
 	channel = CHAN_STATIC,
 	volume = 1.0,
 	level = 0,
-	pitch = 100,
+	pitch = {95,105},
 	sound = {"deadeye/start1.wav", "deadeye/start2.wav"} 
 })
 
@@ -69,7 +69,7 @@ sound.Add( {
 	channel = CHAN_STATIC,
 	volume = 1.0,
 	level = 0,
-	pitch = 100,
+	pitch = {95,105},
 	sound = "deadeye/end.wav"
 })
 
@@ -78,7 +78,7 @@ sound.Add( {
 	channel = CHAN_STATIC,
 	volume = 1.0,
 	level = 0,
-	pitch = 100,
+	pitch = {95,105},
 	sound = "deadeye/background.wav"
 })
 
@@ -87,8 +87,8 @@ local function toggle_deadeye()
 	if spamming then return end
 	spamming = true
 	timer.Simple(0.1, function() spamming = false end)
-	local has_no_ammo = (LocalPlayer():GetActiveWeapon().Clip1 and LocalPlayer():GetActiveWeapon():Clip1() == 0)
-	if not LocalPlayer():Alive() or has_no_ammo then
+
+	if not LocalPlayer():Alive() or not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 then
 		in_deadeye = false
 	else
 		in_deadeye = !in_deadeye
@@ -480,7 +480,8 @@ local function draw_circ_bar(x, y, w, h, progress, color)
 		// just a lil optimization i thought would be nice
 		surface.SetDrawColor(color)
 		surface.SetMaterial(deadeye_core_circle)
-		surface.DrawTexturedRect(x, y, w, h)		
+		surface.DrawTexturedRect(x, y, w, h)
+		return	
 	end
 
 	local dummy = {}
