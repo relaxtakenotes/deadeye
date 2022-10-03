@@ -98,7 +98,7 @@ local function toggle_deadeye()
     	net.WriteBool(in_deadeye)
     net.SendToServer()
 
-    if not in_deadeye and LocalPlayer():Alive() then
+    if not in_deadeye then
 		LocalPlayer():EmitSound("deadeye_end")
 		LocalPlayer():StopLoopingSound(background_sfx_id)
     end
@@ -318,9 +318,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 	end
 
-	local has_no_ammo = (LocalPlayer():GetActiveWeapon().Clip1 and LocalPlayer():GetActiveWeapon():Clip1() == 0)
-
-	if has_no_ammo then
+	if not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 then
 		toggle_deadeye()
 	    return
 	end
