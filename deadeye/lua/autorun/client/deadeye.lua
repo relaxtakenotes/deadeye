@@ -360,7 +360,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			mask = MASK_SHOT_PORTAL
 		})
 
-		if deadeye_vischeck:GetBool() and tr.HitPos != current_target.pos and tr.Entity:EntIndex() != current_target.entindex then
+		if deadeye_vischeck:GetBool() and Entity(current_target.entindex):GetClass() != "prop_ragdoll" and tr.HitPos != current_target.pos and tr.Entity:EntIndex() != current_target.entindex then
 			if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
 		end
 
@@ -472,11 +472,49 @@ end)
 local deadeye_cross = Material("deadeye/deadeye_cross")
 local deadeye_core = Material("deadeye/deadeye_core")
 local blank_material = Material("color")
+local deadeye_core_circle = Material("deadeye/rpg_meter_track_9")
 
-local rpg_meter_track = {}
-for i=0, 10, 1 do
-	print("deadeye/rpg_meter_track_"..i)
-	rpg_meter_track[i+1] = Material("deadeye/rpg_meter_track_"..i)
+local function draw_circ_bar(x, y, w, h, progress, color)
+	// https://gist.github.com/Joseph10112/6e6e896b5feee50f7aa2145aabaf6e8c
+	// i love pasting xD
+
+	if deadeye_infinite:GetBool() then
+		// just a lil optimization i thought would be nice
+		surface.SetDrawColor(color)
+		surface.SetMaterial(deadeye_core_circle)
+		surface.DrawTexturedRect(x, y, w, h)		
+	end
+
+	local dummy = {}
+	table.insert(dummy, {x = x + (w / 2), y = y + (h / 2)})
+	for i = 180, -180 + progress * 360, -1 do
+		table.insert(dummy, {x = x + (w / 2) + math.sin(math.rad(i)) * w, y = y + (h / 2) + math.cos(math.rad(i)) * h})
+	end
+	table.insert(dummy, {x = x + (w / 2), y = y + (h / 2)})
+	
+	render.SetStencilWriteMask(-1)
+	render.SetStencilTestMask(-1)
+	render.SetStencilReferenceValue(0)
+	
+	render.SetStencilCompareFunction(STENCILCOMPARISONFUNCTION_ALWAYS)
+	render.SetStencilPassOperation(STENCILOPERATION_KEEP)
+	render.SetStencilFailOperation(STENCILOPERATION_KEEP)
+	render.SetStencilZFailOperation(STENCILOPERATION_KEEP)
+	render.ClearStencil()
+
+	render.SetStencilEnable(true)
+		render.SetStencilReferenceValue(1)
+		render.SetStencilPassOperation(STENCILOPERATION_REPLACE)
+		
+		surface.SetDrawColor(Color(255, 255, 255))
+		surface.DrawPoly(dummy)
+		render.SetStencilCompareFunction(STENCILCOMPARISONFUNCTION_EQUAL)
+
+		surface.SetDrawColor(color)
+		surface.SetMaterial(deadeye_core_circle)
+		surface.DrawTexturedRect(x, y, w, h)
+		
+	render.SetStencilEnable(false)
 end
 
 hook.Add("HUDPaint", "deadeye_mark_render", function()
@@ -516,7 +554,6 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 		else
-			
 			surface.SetMaterial(deadeye_core)
 			if deadeye_infinite:GetBool() then 
 				surface.SetDrawColor(255, 190, 48, 255)
@@ -525,20 +562,17 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			end
 			surface.DrawTexturedRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 42*deadeye_bar_size:GetFloat(), 42*deadeye_bar_size:GetFloat())
 			
-			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 10)
-			level = math.floor(level)
+			local progress = math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 1, 0)
 
-			if level != 0 then
-				//print(level)
-				surface.SetMaterial(rpg_meter_track[level])
-
+			if progress != 1 then
+				local color
 				if deadeye_infinite:GetBool() then 
-					surface.SetDrawColor(255, 190, 48, 255)
+					color = Color(255, 190, 48, 255)
 				else
-					surface.SetDrawColor(255, 255, 255, 255)
+					color = Color(255, 255, 255, 255)
 				end
 
-				surface.DrawTexturedRect(34-(5.5*deadeye_bar_size:GetFloat())+deadeye_bar_offset_x:GetFloat(), ScrH()-250-(5.5*deadeye_bar_size:GetFloat())-deadeye_bar_offset_y:GetFloat(), 53*deadeye_bar_size:GetFloat(), 53*deadeye_bar_size:GetFloat())
+				draw_circ_bar(34-(5.5*deadeye_bar_size:GetFloat())+deadeye_bar_offset_x:GetFloat(), ScrH()-250-(5.5*deadeye_bar_size:GetFloat())-deadeye_bar_offset_y:GetFloat(), 53*deadeye_bar_size:GetFloat(), 53*deadeye_bar_size:GetFloat(), progress, color)
 			end
 		end
 	end
