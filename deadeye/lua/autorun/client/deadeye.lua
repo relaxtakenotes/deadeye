@@ -159,6 +159,7 @@ local function create_deadeye_point()
 	data.relative_pos_to_hitbox = matrix:GetTranslation()
 	data.initial_rotation = tr.Entity:GetAngles()
 	data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
+	data.order = total_mark_count
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -186,11 +187,25 @@ local function remove_mark(entindex, index)
 end
 
 local function get_first_mark()
+	// bandaid fix for misordered shots
+	// could, in theory, fix it by changing the fundementals of how i store marks but who cares lol
+
+	local smallest_order
 	for entindex, cache_table in pairs(deadeye_cached_positions) do
 		for i, mark in ipairs(cache_table) do
-			return mark
+			if not smallest_order then smallest_order = mark.data.order end
+			smallest_order = math.min(smallest_order, mark.data.order)
 		end
 	end
+
+	for entindex, cache_table in pairs(deadeye_cached_positions) do
+		for i, mark in ipairs(cache_table) do
+			if mark.data.order == smallest_order then
+				return mark
+			end
+		end
+	end
+
 	return {}
 end
 
@@ -372,15 +387,6 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 	})
 
 	if IsValid(tr.Entity) then
-		//for entindex, data_table in pairs(deadeye_marks) do
-		//	if entindex == tr.Entity:EntIndex() then
-		//		for i, data in ipairs(data_table) do
-		//			//data.relative_pos_to_hitbox:Rotate(data.initial_rotation)
-		//			//data.initial_rotation = tr.Entity:GetAngles()
-		//			//data.relative_pos_to_hitbox:Rotate(-data.initial_rotation)
-		//		end
-		//	end
-		//end
 		deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
 		deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
 		found_ragdoll = true
@@ -465,17 +471,13 @@ end)
 
 local deadeye_cross = Material("deadeye/deadeye_cross")
 local deadeye_core = Material("deadeye/deadeye_core")
+local blank_material = Material("color")
+
 local rpg_meter_track = {}
-rpg_meter_track[1] = Material("deadeye/rpg_meter_track_0")
-rpg_meter_track[2] = Material("deadeye/rpg_meter_track_1")
-rpg_meter_track[3] = Material("deadeye/rpg_meter_track_2")
-rpg_meter_track[4] = Material("deadeye/rpg_meter_track_3")
-rpg_meter_track[5] = Material("deadeye/rpg_meter_track_4")
-rpg_meter_track[6] = Material("deadeye/rpg_meter_track_5")
-rpg_meter_track[7] = Material("deadeye/rpg_meter_track_6")
-rpg_meter_track[8] = Material("deadeye/rpg_meter_track_7")
-rpg_meter_track[9] = Material("deadeye/rpg_meter_track_8")
-rpg_meter_track[10] = Material("deadeye/rpg_meter_track_9")
+for i=0, 10, 1 do
+	print("deadeye/rpg_meter_track_"..i)
+	rpg_meter_track[i+1] = Material("deadeye/rpg_meter_track_"..i)
+end
 
 hook.Add("HUDPaint", "deadeye_mark_render", function()
 	if in_deadeye then
@@ -514,6 +516,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 		else
+			
 			surface.SetMaterial(deadeye_core)
 			if deadeye_infinite:GetBool() then 
 				surface.SetDrawColor(255, 190, 48, 255)
@@ -521,11 +524,12 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 				surface.SetDrawColor(255, 255, 255, 255)
 			end
 			surface.DrawTexturedRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 42*deadeye_bar_size:GetFloat(), 42*deadeye_bar_size:GetFloat())
-
+			
 			local level = math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 10)
 			level = math.floor(level)
 
 			if level != 0 then
+				//print(level)
 				surface.SetMaterial(rpg_meter_track[level])
 
 				if deadeye_infinite:GetBool() then 
