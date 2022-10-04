@@ -230,12 +230,13 @@ local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
 	local weapon = ent:GetActiveWeapon()
+	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.2
+
+	shooting_quota = shooting_quota - 1
+
 	net.Start("deadeye_primaryfire_time")
 	net.WriteBool(true)
 	net.SendToServer()
-	local delay = math.abs(weapon:GetNextPrimaryFire() - CurTime()) * 0.3
-
-	shooting_quota = shooting_quota - 1
 
 	local mark = get_first_mark()
 	if table.Count(mark) <= 0 then return end
@@ -249,10 +250,11 @@ end
 hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd) 
 	local ply = LocalPlayer()
 	if not ply:Alive() then return end
+
 	local wep = ply:GetActiveWeapon()
-	if not wep then return end
-	if not wep.Clip1 then return end
+	if not wep or not wep.Clip1 then return end
 	local current_ammo = wep:Clip1()
+
 	if current_ammo < previous_ammo and not (wep != previous_wep) then
 		on_primary_attack(ply, wep)
 	end
@@ -336,9 +338,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
 	if release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0) then
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
-		no_ammo_spent_timer = 0
+		timer.Simple(0.1, function() no_ammo_spent_timer = 0 end)
 	elseif shooting_quota > 0 and total_mark_count > 0 then
-		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + 20 * FrameTime(), 0, 1)
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + 10 * FrameTime(), 0, 1)
 	end
 
 	//print(total_mark_count, shooting_quota)

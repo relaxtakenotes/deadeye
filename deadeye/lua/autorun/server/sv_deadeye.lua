@@ -88,10 +88,11 @@ hook.Add("EntityFireBullets", "deadeye_spread", function(attacker, data)
     end
 end)
 
-net.Receive("deadeye_primaryfire_time", function(len, ply) 
+net.Receive("deadeye_primaryfire_time", function(len, ply)
 	local weapon = ply:GetActiveWeapon()
 	local nextprimaryfire = weapon:GetNextPrimaryFire()
-	local newnextfire = CurTime() + math.abs(nextprimaryfire - CurTime()) * 0.3
+	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.2
+	local newnextfire = CurTime() + delay
 	weapon:SetNextPrimaryFire(newnextfire)
 end)
 
