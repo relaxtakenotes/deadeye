@@ -173,8 +173,13 @@ local function get_correct_mark_pos(ent, data)
 	// with proper rotations... more or less?
 	local matrix = get_hitbox_matrix(ent, data.hitbox_id)
 	local relative_pos = Vector(data.relative_pos_to_hitbox:Unpack())
-
 	relative_pos:Rotate(ent:GetAngles())
+
+	if not matrix then // sometimes invalid for no reason.
+		local pos, ang = get_hitbox_info(ent, data.hitbox_id)
+		return pos - relative_pos
+	end
+
 	matrix:SetTranslation(matrix:GetTranslation() - relative_pos)
 
 	return matrix:GetTranslation()
