@@ -145,12 +145,12 @@ local function create_deadeye_point()
 
 	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
 
-	//debugoverlay.Line(tr.HitPos, tr.StartPos, 5, Color(255, 0, 0), true)
-
 	added_a_mark = true
 
 	local matrix = get_hitbox_matrix(tr.Entity, tr.HitBox)
-	tr.HitPos = tr.HitPos + (matrix:GetTranslation() - tr.HitPos):GetNormalized() + (tr.HitPos - tr.StartPos):GetNormalized() * 2
+
+	local precision_multiplier = math.Remap(tr.Fraction, 0, 1, 1, 10)
+	tr.HitPos = tr.HitPos + (matrix:GetTranslation() - tr.HitPos):GetNormalized() * precision_multiplier + tr.Normal * 2
 
 	matrix:SetTranslation(matrix:GetTranslation() - tr.HitPos)
 
