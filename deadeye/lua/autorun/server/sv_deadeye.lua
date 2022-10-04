@@ -48,8 +48,13 @@ end)
 
 hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 	if in_deadeye then
+		local weapon = ply:GetActiveWeapon()
 		ply:SetViewPunchAngles(Angle(0, 0, 0))
 		ply:SetViewPunchVelocity(Angle(0, 0, 0))
+		// mw2019 stuff
+		if weapon.Trigger and weapon:GetTriggerDelta() < 1 then
+			weapon:SetTriggerDelta(1)
+		end
 	end
 
 	if in_deadeye != in_deadeye_prev and in_deadeye then
@@ -90,7 +95,6 @@ end)
 
 net.Receive("deadeye_primaryfire_time", function(len, ply)
 	local weapon = ply:GetActiveWeapon()
-	local nextprimaryfire = weapon:GetNextPrimaryFire()
 	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.2
 	local newnextfire = CurTime() + delay
 	weapon:SetNextPrimaryFire(newnextfire)
