@@ -429,7 +429,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 end)
 
 hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
-	if not ent:IsNPC() or not deadeye_transfer_to_ragdolls:GetBool() then return end
+	if not deadeye_transfer_to_ragdolls:GetBool() then return end
 	local found_ragdoll = false
 	local entidx = ent:EntIndex()
 	local model_name = ent:GetModel()
@@ -460,7 +460,7 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 end)
 
 hook.Add("EntityRemoved", "deadeye_cleanup_classic", function(ent)
-	if not ent:IsNPC() or deadeye_transfer_to_ragdolls:GetBool() then return end
+	if deadeye_transfer_to_ragdolls:GetBool() then return end
 	local entidx = ent:EntIndex()
 
 	if total_mark_count > 0 then
@@ -589,6 +589,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 				local pos2d = mark.pos:ToScreen()
 				// bruh
 				local color_blink
+
 				if Entity(entindex):GetClass() != "prop_ragdoll" then
 					if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
 					if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
