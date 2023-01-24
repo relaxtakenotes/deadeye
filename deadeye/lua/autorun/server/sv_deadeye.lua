@@ -1,12 +1,14 @@
 if not game.SinglePlayer() then 
 	return 
 end
+
 util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
 util.AddNetworkString("deadeye_primaryfire_time")
 
 local in_deadeye = false
 local in_deadeye_prev = false
+local slowdown = false
 
 local accuracy_vars = {}
 local accuracy_vars_original = {}
@@ -51,6 +53,7 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 		local weapon = ply:GetActiveWeapon()
 		ply:SetViewPunchAngles(Angle(0, 0, 0))
 		ply:SetViewPunchVelocity(Angle(0, 0, 0))
+
 		// mw2019 stuff
 		if weapon.Trigger and weapon:GetTriggerDelta() < 1 then
 			weapon:SetTriggerDelta(1)
@@ -94,19 +97,21 @@ hook.Add("EntityFireBullets", "deadeye_spread", function(attacker, data)
 end)
 
 net.Receive("deadeye_primaryfire_time", function(len, ply)
-	local weapon = ply:GetActiveWeapon()
-	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.2
-	local newnextfire = CurTime() + delay
-	weapon:SetNextPrimaryFire(newnextfire)
+	if slowdown then
+		local weapon = ply:GetActiveWeapon()
+		local delay = weapon:GetNextPrimaryFire() - weapon:LastShootTime()
+		weapon:SetNextPrimaryFire(CurTime() + delay * 0.1825)
+	end
 end)
 
 net.Receive("in_deadeye", function(len,ply) 
 	in_deadeye = net.ReadBool()
+	slowdown = net.ReadBool()
 
 	if in_deadeye then
 		ply:GetActiveWeapon():SetClip1(ply:GetActiveWeapon():GetMaxClip1())
-		game.SetTimeScale(0.2)
+		if slowdown then game.SetTimeScale(0.2) end
 	else
-		game.SetTimeScale(1)
+		if slowdown then game.SetTimeScale(1) end
 	end
 end)

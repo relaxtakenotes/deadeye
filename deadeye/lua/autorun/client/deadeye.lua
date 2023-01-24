@@ -33,7 +33,8 @@ local background_sfx_id = 0
 local no_ammo_spent_timer = 0
 local previous_ammo_count = 0
 
-local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "0", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
+local deadeye_slowdown = CreateConVar("cl_deadeye_slowdown", "1", {FCVAR_ARCHIVE}, "Slow down the time when using deadeye.", 0, 1)
+local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "1", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
 local draw_deadeye_bar_style = CreateConVar("cl_deadeye_bar_mode", "1", {FCVAR_ARCHIVE}, "0 - bar, 1 - circular, like in the game", 0, 2)
 local deadeye_bar_offset_x = CreateConVar("cl_deadeye_bar_offset_x", "0", {FCVAR_ARCHIVE}, "X axis offset", -9999, 9999)
 local deadeye_bar_offset_y = CreateConVar("cl_deadeye_bar_offset_y", "0", {FCVAR_ARCHIVE}, "Y axis offset", -9999, 9999)
@@ -42,6 +43,7 @@ local deadeye_bar_size = CreateConVar("cl_deadeye_bar_size", "1", {FCVAR_ARCHIVE
 local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE}, "Make the thang infinite.", 0, 1)
 local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled. Also might be a bit wonky at times...", 0, 1)
 local deadeye_vischeck = CreateConVar("cl_deadeye_vischeck", "0", {FCVAR_ARCHIVE}, "Stop wasting your ammo. I know that's how it's done in the game but just stop, okay?", 0, 1)
+local deadeye_smooth_aimbot = CreateConVar("cl_deadeye_smooth_aimbot", "1", {FCVAR_ARCHIVE}, "Instead of aiming silenty, aim smoothly and visibly. Turns off the dumb sensitivity gimmick.", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
@@ -96,6 +98,7 @@ local function toggle_deadeye()
 
     net.Start("in_deadeye")
     	net.WriteBool(in_deadeye)
+    	net.WriteBool(deadeye_slowdown:GetBool())
     net.SendToServer()
 
     if not in_deadeye then
@@ -143,7 +146,9 @@ local function create_deadeye_point()
 		mask = MASK_SHOT_PORTAL
 	})
 
-	if not IsValid(tr.Entity) or not tr.Entity:IsNPC() then return end
+	local is_explosive = string.find(tr.Entity:GetModel(), "explosive") or string.find(tr.Entity:GetModel(), "gascan") or string.find(tr.Entity:GetModel(), "propane_tank")
+
+	if not IsValid(tr.Entity) or (not tr.Entity:IsNPC() and not is_explosive) then return end
 
 	added_a_mark = true
 
@@ -235,7 +240,7 @@ local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
 	local weapon = ent:GetActiveWeapon()
-	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.2
+	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.1825
 
 	shooting_quota = shooting_quota - 1
 
@@ -269,16 +274,21 @@ hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd)
 	previous_wep = wep
 end)
 
+local already_aiming = false
+
 hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// update real view angle for silent aimbot
-	if (!ang) then ang = cmd:GetViewAngles() end
-	ang = ang + Angle(cmd:GetMouseY() * .023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), cmd:GetMouseX() * -.023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), 0)
-	if cmd:KeyDown(IN_ATTACK) and cmd:KeyDown(IN_USE) and LocalPlayer():GetActiveWeapon():GetClass() == "weapon_physgun" then
-		ang = cmd:GetViewAngles() -- physgun prop rotating causes desync with the actual view angle
+
+	if not deadeye_smooth_aimbot:GetBool() then
+		if (!ang) then ang = cmd:GetViewAngles() end
+		ang = ang + Angle(cmd:GetMouseY() * .023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), cmd:GetMouseX() * -.023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), 0)
+		if cmd:KeyDown(IN_ATTACK) and cmd:KeyDown(IN_USE) and LocalPlayer():GetActiveWeapon():GetClass() == "weapon_physgun" then
+			ang = cmd:GetViewAngles() -- physgun prop rotating causes desync with the actual view angle
+		end
+		ang.x = math.NormalizeAngle(ang.x)
+		ang.p = math.Clamp(ang.p, -89, 89)
+		cmd:SetViewAngles(ang)
 	end
-	ang.x = math.NormalizeAngle(ang.x)
-	ang.p = math.Clamp(ang.p, -89, 89)
-	cmd:SetViewAngles(ang)
 
 	if max_deadeye_timer:GetFloat() <= 0 then
 		max_deadeye_timer:SetFloat(1)
@@ -286,11 +296,16 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	if not in_deadeye then 
 		added_a_mark = false
-		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * FrameTime(), 0, max_deadeye_timer:GetFloat()) end
+		no_ammo_spent_timer = 0
+		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
 		return 
 	end
 
-	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * FrameTime() / 0.3, 0, max_deadeye_timer:GetFloat()) end
+	if SetViewPunchAngles then
+		SetViewPunchAngles(Angle(0,0,0))
+	end
+
+	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
 
 	if not LocalPlayer():Alive() then
 		toggle_deadeye()
@@ -340,27 +355,28 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	if shooting_quota > 0 and not cmd:KeyDown(IN_ATTACK) and total_mark_count > 0 then
 		cmd:AddKey(IN_ATTACK)
 	end
-
-	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
-	if release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0) then
-		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
-		timer.Simple(0.05, function() no_ammo_spent_timer = 0 end)
-	elseif shooting_quota > 0 and total_mark_count > 0 then
-		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + 25 * FrameTime(), 0, 1)
-	end
-
 	//print(total_mark_count, shooting_quota)
 
 	// do the silent aimbot shit
-	if cmd:CommandNumber() == 0 then
-		cmd:SetViewAngles(ang)
-		return
+	if not deadeye_smooth_aimbot:GetBool() then
+		if cmd:CommandNumber() == 0 then
+			cmd:SetViewAngles(ang)
+			return
+		end
 	end
 
 	//print(LocalPlayer():GetActiveWeapon():GetTriggerDelta())
 
+	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
+	if current_target.entindex and (release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0)) then
+		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
+		timer.Simple(0.05, function() no_ammo_spent_timer = 0 end)
+	elseif shooting_quota > 0 and total_mark_count > 0 then
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 10, 0, 1)
+	end
+
 	// deadeye aka aimbot
-	if current_target.entindex and cmd:KeyDown(IN_ATTACK) then
+	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
 		local tr = util.TraceLine( {
 			start = LocalPlayer():GetShootPos(),
 			endpos = current_target.pos,
@@ -368,13 +384,47 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			mask = MASK_SHOT_PORTAL
 		})
 
-		if deadeye_vischeck:GetBool() and Entity(current_target.entindex):GetClass() != "prop_ragdoll" and tr.HitPos != current_target.pos and tr.Entity:EntIndex() != current_target.entindex then
-			if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
+		if deadeye_vischeck:GetBool() and Entity(current_target.entindex):GetClass() != "prop_ragdoll" and not tr.HitPos:IsEqualTol(current_target.pos, 10) and tr.Entity:EntIndex() != current_target.entindex then
+			cmd:RemoveKey(IN_ATTACK)
 		end
 
-		local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * engine.TickInterval()):Angle()
-		cmd:SetViewAngles(aimangles)
-		fix_movement(cmd, ang)
+		if not deadeye_smooth_aimbot:GetBool() then
+			local aimangles = (current_target.pos - LocalPlayer():GetShootPos()):Angle()
+			cmd:SetViewAngles(aimangles)
+			fix_movement(cmd, ang)
+			already_aiming = true
+		else
+			local target_position = Vector()
+			target_position:SetUnpacked(current_target.pos:Unpack())
+			local target_velocity = Entity(current_target.entindex):GetVelocity()
+			local local_velocity = LocalPlayer():GetVelocity()
+
+			local smooth_amount = RealFrameTime() * 10
+			local whatthedeuce = RealFrameTime() / engine.TickInterval() / smooth_amount
+			if deadeye_slowdown:GetBool() then whatthedeuce = whatthedeuce * 0.255 end
+
+			target_position = target_position + (target_velocity / 100) * whatthedeuce
+			target_position = target_position - (local_velocity / 100) * whatthedeuce
+
+			local aimangles = (target_position - LocalPlayer():GetShootPos()):Angle()
+			local smoothed = LerpAngle(smooth_amount, LocalPlayer():EyeAngles(), aimangles)
+
+			smoothed = Angle(smoothed.x, smoothed.y, 0)
+
+			cam.Start3D()
+				local screen_mark_pos = current_target.pos:ToScreen()
+			cam.End3D()
+
+			local clamped_distance = math.Clamp(LocalPlayer():GetPos():Distance(current_target.pos), 1, 500)
+			local precision_mult = math.Remap(clamped_distance, 1, 500, 12, 3)
+
+			if not Vector(ScrW()/2, ScrH()/2):IsEqualTol(Vector(screen_mark_pos.x, screen_mark_pos.y, 0), precision_mult) then cmd:RemoveKey(IN_ATTACK) end
+
+			cmd:SetViewAngles(smoothed)
+			already_aiming = true
+		end
+	else
+		already_aiming = false
 	end
 end)
 
@@ -428,16 +478,12 @@ hook.Add("ChatText", "deadeye_hide_cvar_changes", function(index, name, text, ty
 	if string.find(text, "sv_tfa_soundscale") then return true end
 end)
 
-hook.Add("InitPostEntity", "deadeye_stuff", function() 
-	LocalPlayer():ChatPrint("[IMPORTANT INFO FOR DEADEYE MOD] During deadeye, the mouse accuracy is reduced due to the method used to aim. To increase said accuracy, please change the sensitivity convar to higher values. If you need to actually change your mouse speed, please change the cl_deadeye_mouse_sensitivity convar")
-end)
-
 local pp_in_deadeye = {
-	["$pp_colour_addr"] = 0.60,
-	["$pp_colour_addg"] = 0.35,
-	["$pp_colour_addb"] = 0.13,
-	["$pp_colour_brightness"] = -0.4,
-	["$pp_colour_contrast"] = 0.7,
+	["$pp_colour_addr"] = 0.8,
+	["$pp_colour_addg"] = 0.4,
+	["$pp_colour_addb"] = 0.0,
+	["$pp_colour_brightness"] = -0.45,
+	["$pp_colour_contrast"] = 0.6,
 	["$pp_colour_colour"] = 0.8,
 }
 
@@ -451,6 +497,9 @@ local pp_out_deadeye = {
 }
 
 local vignettemat = Material("overlays/vignette01")
+local blink_mult = 1
+local blink_fraction = 1
+
 hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 	local tab = {
 		["$pp_colour_addr"] = Lerp(pp_lerp, pp_out_deadeye["$pp_colour_addr"], pp_in_deadeye["$pp_colour_addr"]),
@@ -462,16 +511,23 @@ hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 	}
 
 	if in_deadeye then
-		pp_lerp = math.Clamp(pp_lerp + pp_fraction * 50 * FrameTime(), 0, 1)
+		pp_lerp = math.Clamp(pp_lerp + pp_fraction * RealFrameTime() * 7, 0, 1)
 		tab["$pp_colour_brightness"] = Lerp(pp_lerp, 0.8, pp_in_deadeye["$pp_colour_brightness"])
 	else
-		pp_lerp = math.Clamp(pp_lerp - pp_fraction * 20 * FrameTime(), 0, 1)
+		pp_lerp = math.Clamp(pp_lerp - pp_fraction * RealFrameTime() * 7, 0, 1)
 	end
 
 	if pp_lerp > 0 then
+		if blink_fraction >= 1 then blink_fraction = 0 end
+		blink_fraction = blink_fraction + FrameTime() + math.random(0.0, 1.0) * 2
+		if blink_fraction > 0.5 then
+			blink_mult = math.Approach(blink_mult, 0, RealFrameTime())
+		else
+			blink_mult = math.Approach(blink_mult, 1, RealFrameTime())
+		end
 		DrawColorModify(tab)
 		render.UpdateScreenEffectTexture()
-		vignettemat:SetFloat("$alpha", pp_lerp)
+		vignettemat:SetFloat("$alpha", pp_lerp * blink_mult)
 		render.SetMaterial(vignettemat)
 		render.DrawScreenQuad()
 	end
@@ -487,7 +543,6 @@ local function draw_circ_bar(x, y, w, h, progress, color)
 	// i love pasting xD
 
 	if deadeye_infinite:GetBool() then
-		// just a lil optimization i thought would be nice
 		surface.SetDrawColor(color)
 		surface.SetMaterial(deadeye_core_circle)
 		surface.DrawTexturedRect(x, y, w, h)
@@ -537,7 +592,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 				if Entity(entindex):GetClass() != "prop_ragdoll" then
 					if not mark_brightness[entindex] then mark_brightness[entindex] = {} end
 					if not mark_brightness[entindex][mark.index] then mark_brightness[entindex][mark.index] = 1 end
-					mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 30 * FrameTime(), 0, 1)
+					mark_brightness[entindex][mark.index] = math.Clamp(mark_brightness[entindex][mark.index] - 4*RealFrameTime(), 0, 1)
 					color_blink = math.Remap(mark_brightness[entindex][mark.index], 0, 1, 0, 255)
 				else
 					color_blink = 0
@@ -588,5 +643,4 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 end)
 
 concommand.Add("cl_deadeye_mark", create_deadeye_point)
-concommand.Add("cl_deadeye_clear", function() deadeye_marks = {} end)
 concommand.Add("cl_deadeye_toggle", toggle_deadeye)
