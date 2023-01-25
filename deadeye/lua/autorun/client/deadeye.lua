@@ -251,7 +251,7 @@ local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
 	local weapon = ent:GetActiveWeapon()
-	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.1825
+	local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.1825
 
 	shooting_quota = shooting_quota - 1
 	if game.SinglePlayer() then
@@ -260,7 +260,7 @@ local function on_primary_attack(ent)
 		net.SendToServer()
 	end
 
-	if weapon:GetNextPrimaryFire() > 0 and delay < 2 then
+	if weapon:GetNextPrimaryFire() > 0 and delay < 2 and delay > 0 then
 		release_attack = true
 		timer.Simple(delay, function()
 			release_attack = false
