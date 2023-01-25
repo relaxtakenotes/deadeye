@@ -97,7 +97,7 @@ hook.Add("EntityFireBullets", "deadeye_spread", function(attacker, data)
 end)
 
 net.Receive("deadeye_primaryfire_time", function(len, ply)
-	if slowdown then
+	if slowdown and ply:GetActiveWeapon():GetNextPrimaryFire() > 0 then
 		local weapon = ply:GetActiveWeapon()
 		local delay = weapon:GetNextPrimaryFire() - weapon:LastShootTime()
 		weapon:SetNextPrimaryFire(CurTime() + delay * 0.1825)
@@ -110,6 +110,7 @@ net.Receive("in_deadeye", function(len,ply)
 
 	if in_deadeye then
 		ply:GetActiveWeapon():SetClip1(ply:GetActiveWeapon():GetMaxClip1())
+		
 		if slowdown then game.SetTimeScale(0.2) end
 	else
 		if slowdown then game.SetTimeScale(1) end

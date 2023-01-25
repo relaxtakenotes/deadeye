@@ -1,9 +1,3 @@
-if not game.SinglePlayer() then 
-	hook.Add("InitPostEntity", "deadeye_warning", function() 
-		Derma_Message("Why are you playing in multiplayer?\nThis mod doesn't work at all in multiplayer and opens up severe security vulnerabilities.\nThis mod was disabled for your safety.\nDon't forget to change your mouse sensitivity if you have modified it!", "Deadeye", "wow frick u") 
-	end) 
-	return 
-end
 
 local deadeye_marks = {} -- used to update the cache
 local deadeye_cached_positions = {} -- actual positions of the marks in real time
@@ -17,9 +11,11 @@ local added_a_mark = false
 local in_deadeye = false
 local release_attack = false
 local spamming = false
+local wait_for_target_switch = false
 
 local previous_ammo = 0
 local previous_wep = NULL
+local previous_ammo_count = 0
 
 local pp_lerp = 0
 local pp_fraction = 0.3
@@ -31,7 +27,6 @@ local deadeye_timer_fraction = 1
 
 local background_sfx_id = 0
 local no_ammo_spent_timer = 0
-local previous_ammo_count = 0
 
 local deadeye_slowdown = CreateConVar("cl_deadeye_slowdown", "1", {FCVAR_ARCHIVE}, "Slow down the time when using deadeye.", 0, 1)
 local draw_deadeye_bar = CreateConVar("cl_deadeye_bar", "1", {FCVAR_ARCHIVE}, "Draw the deadeye charge bar", 0, 1)
@@ -44,9 +39,17 @@ local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE
 local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled. Also might be a bit wonky at times...", 0, 1)
 local deadeye_vischeck = CreateConVar("cl_deadeye_vischeck", "0", {FCVAR_ARCHIVE}, "Stop wasting your ammo. I know that's how it's done in the game but just stop, okay?", 0, 1)
 local deadeye_smooth_aimbot = CreateConVar("cl_deadeye_smooth_aimbot", "1", {FCVAR_ARCHIVE}, "Instead of aiming silenty, aim smoothly and visibly. Turns off the dumb sensitivity gimmick.", 0, 1)
+local deadeye_target_switch_delay = CreateConVar("cl_deadeye_target_delay", "0.5", {FCVAR_ARCHIVE}, "Wait for the given seconds before switching to a different aim point", 0, 2)
+local deadeye_debug = CreateConVar("cl_deadeye_debug", "0", {FCVAR_ARCHIVE}, "Debug!!!", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
 local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARCHIVE}, "Due to the silent aim method, there needs to be more mouse precision and so the sensitivity is overriden. Use this convar to change your mouse sens.", -9999, 9999)
+
+if not game.SinglePlayer() then 
+	hook.Add("InitPostEntity", "deadeye_warning", function() 
+		Derma_Message("To prevent creating a major exploit the server wont increase your accuracy, speed you up or reduce damage and some values are forced. \nPlay in SinglePlayer to experience the mod fully.", "Deadeye in Multiplayer", "wow frick u")
+	end)
+end
 
 sound.Add( {
 	name = "deadeye_start",
@@ -96,10 +99,12 @@ local function toggle_deadeye()
 		in_deadeye = !in_deadeye
 	end
 
-    net.Start("in_deadeye")
-    	net.WriteBool(in_deadeye)
-    	net.WriteBool(deadeye_slowdown:GetBool())
-    net.SendToServer()
+	if game.SinglePlayer() then
+	    net.Start("in_deadeye")
+	    	net.WriteBool(in_deadeye)
+	    	net.WriteBool(deadeye_slowdown:GetBool())
+	    net.SendToServer()
+	end
 
     if not in_deadeye then
 		LocalPlayer():EmitSound("deadeye_end")
@@ -243,20 +248,48 @@ local function on_primary_attack(ent)
 	local delay = math.abs(CurTime() - weapon:GetNextPrimaryFire()) * 0.1825
 
 	shooting_quota = shooting_quota - 1
+	if game.SinglePlayer() then
+		net.Start("deadeye_primaryfire_time")
+		net.WriteBool(true)
+		net.SendToServer()
+	end
 
-	net.Start("deadeye_primaryfire_time")
-	net.WriteBool(true)
-	net.SendToServer()
+	if weapon:GetNextPrimaryFire() > 0 then
+		release_attack = true
+		timer.Simple(delay, function()
+			release_attack = false
+		end)
+	end
 
-	release_attack = true
-	timer.Simple(delay, function()
-		release_attack = false
-	end)
+	wait_for_target_switch = true
+	if deadeye_slowdown:GetBool() then
+		timer.Simple(deadeye_target_switch_delay:GetFloat() * 0.2, function() wait_for_target_switch = false end)
+	else
+	    timer.Simple(deadeye_target_switch_delay:GetFloat(), function() wait_for_target_switch = false end)
+	end
 
 	local mark = get_first_mark()
 	if table.Count(mark) <= 0 then return end
 	remove_mark(mark.entindex, mark.index)
 end
+
+hook.Add("Think", "debug_deadyee", function() 
+	if engine.TickCount() % 20 and deadeye_debug:GetBool() then
+		print("----------------------------------")
+		print("shooting_quota: ", shooting_quota)
+		print("total_mark_count: ", total_mark_count)
+		print("added_a_mark: ", added_a_mark)
+		print("in_deadeye: ", in_deadeye)
+		print("release_attack: ", release_attack)
+		print("spamming: ", spamming)
+		print("wait_for_target_switch: ", wait_for_target_switch)
+		print("previous_ammo: ", previous_ammo)
+		print("previous_wep: ", previous_wep)
+		print("previous_ammo_count: ", previous_ammo_count)
+		print("no_ammo_spent_timer: ", no_ammo_spent_timer)
+		print("----------------------------------")
+	end
+end)
 
 hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd) 
 	local ply = LocalPlayer()
@@ -297,7 +330,12 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	if not in_deadeye then 
 		added_a_mark = false
 		no_ammo_spent_timer = 0
-		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
+		release_attack = false
+		if game.SinglePlayer() then 
+			if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
+		else
+			deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, 10)
+		end
 		return 
 	end
 
@@ -305,7 +343,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		SetViewPunchAngles(Angle(0,0,0))
 	end
 
-	if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
+	if game.SinglePlayer() then 
+		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
+	else
+		deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, 10)
+	end
 
 	if not LocalPlayer():Alive() then
 		toggle_deadeye()
@@ -352,7 +394,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	end
 
 	// we have a quota to work for and we have available marks, shoot!!!
-	if shooting_quota > 0 and not cmd:KeyDown(IN_ATTACK) and total_mark_count > 0 then
+	if shooting_quota > 0 and total_mark_count > 0 then
 		cmd:AddKey(IN_ATTACK)
 	end
 	//print(total_mark_count, shooting_quota)
@@ -374,6 +416,8 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	elseif shooting_quota > 0 and total_mark_count > 0 then
 		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 10, 0, 1)
 	end
+	
+	if wait_for_target_switch then cmd:RemoveKey(IN_ATTACK) return end
 
 	// deadeye aka aimbot
 	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
@@ -542,7 +586,7 @@ local function draw_circ_bar(x, y, w, h, progress, color)
 	// https://gist.github.com/Joseph10112/6e6e896b5feee50f7aa2145aabaf6e8c
 	// i love pasting xD
 
-	if deadeye_infinite:GetBool() then
+	if game.SinglePlayer() and deadeye_infinite:GetBool() then
 		surface.SetDrawColor(color)
 		surface.SetMaterial(deadeye_core_circle)
 		surface.DrawTexturedRect(x, y, w, h)
@@ -611,7 +655,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			surface.SetDrawColor(0, 0, 0, 128)
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), 150*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 
-			if deadeye_infinite:GetBool() then 
+			if game.SinglePlayer() and deadeye_infinite:GetBool() then 
 				surface.SetDrawColor(255, 190, 48, 128)
 			else
 				surface.SetDrawColor(255, 255, 255, 128)
@@ -620,7 +664,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 			surface.DrawRect(34+deadeye_bar_offset_x:GetFloat(), ScrH()-250-deadeye_bar_offset_y:GetFloat(), math.Remap(deadeye_timer, 0, max_deadeye_timer:GetFloat(), 0, 150)*deadeye_bar_size:GetFloat(), 12*deadeye_bar_size:GetFloat())
 		else
 			surface.SetMaterial(deadeye_core)
-			if deadeye_infinite:GetBool() then 
+			if game.SinglePlayer() and deadeye_infinite:GetBool() then 
 				surface.SetDrawColor(255, 190, 48, 255)
 			else
 				surface.SetDrawColor(255, 255, 255, 255)
@@ -631,7 +675,7 @@ hook.Add("HUDPaint", "deadeye_mark_render", function()
 
 			if progress != 1 then
 				local color
-				if deadeye_infinite:GetBool() then 
+				if game.SinglePlayer() and deadeye_infinite:GetBool() then 
 					color = Color(255, 190, 48, 255)
 				else
 					color = Color(255, 255, 255, 255)
