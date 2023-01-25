@@ -109,7 +109,19 @@ net.Receive("in_deadeye", function(len,ply)
 	slowdown = net.ReadBool()
 
 	if in_deadeye then
-		ply:GetActiveWeapon():SetClip1(ply:GetActiveWeapon():GetMaxClip1())
+		local weapon = ply:GetActiveWeapon()
+
+		pcall(function() 
+			local current_amount = weapon:Clip1()
+			local max_amount = weapon:GetMaxClip1()
+			local total_amount = ply:GetAmmoCount(weapon:GetPrimaryAmmoType())
+			local required = max_amount - current_amount
+
+			if required <= total_amount then
+				ply:RemoveAmmo(required, weapon:GetPrimaryAmmoType())
+				weapon:SetClip1(max_amount)
+			end
+		end)
 		
 		if slowdown then game.SetTimeScale(0.2) end
 	else

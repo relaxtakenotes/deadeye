@@ -39,7 +39,7 @@ local deadeye_infinite = CreateConVar("cl_deadeye_infinite", "0", {FCVAR_ARCHIVE
 local deadeye_transfer_to_ragdolls = CreateConVar("cl_deadeye_transfer_to_ragdolls", "0", {FCVAR_ARCHIVE}, "Transfer the marks of an entity that just died to their ragdoll. Requires keep corpses enabled. Also might be a bit wonky at times...", 0, 1)
 local deadeye_vischeck = CreateConVar("cl_deadeye_vischeck", "0", {FCVAR_ARCHIVE}, "Stop wasting your ammo. I know that's how it's done in the game but just stop, okay?", 0, 1)
 local deadeye_smooth_aimbot = CreateConVar("cl_deadeye_smooth_aimbot", "1", {FCVAR_ARCHIVE}, "Instead of aiming silenty, aim smoothly and visibly. Turns off the dumb sensitivity gimmick.", 0, 1)
-local deadeye_target_switch_delay = CreateConVar("cl_deadeye_target_delay", "0.5", {FCVAR_ARCHIVE}, "Wait for the given seconds before switching to a different aim point", 0, 2)
+local deadeye_target_switch_delay = CreateConVar("cl_deadeye_target_delay", "0.05", {FCVAR_ARCHIVE}, "Wait for the given seconds before switching to a different aim point", 0, 2)
 local deadeye_debug = CreateConVar("cl_deadeye_debug", "0", {FCVAR_ARCHIVE}, "Debug!!!", 0, 1)
 
 local mouse_sens = GetConVar("sensitivity")
@@ -87,6 +87,7 @@ sound.Add( {
 	sound = "deadeye/background.wav"
 })
 
+local background_sfx = NULL
 
 local function toggle_deadeye()
 	if spamming then return end
@@ -108,12 +109,17 @@ local function toggle_deadeye()
 
     if not in_deadeye then
 		LocalPlayer():EmitSound("deadeye_end")
-		LocalPlayer():StopLoopingSound(background_sfx_id)
+		background_sfx:Stop()
+		//LocalPlayer():StopLoopingSound(background_sfx_id)
     end
 
     if in_deadeye then 	
-    	LocalPlayer():EmitSound("deadeye_start") 
-    	background_sfx_id = LocalPlayer():StartLoopingSound("deadeye_background")
+    	LocalPlayer():EmitSound("deadeye_start")
+
+    	background_sfx = CreateSound(LocalPlayer(), "deadeye/background.wav")
+    	background_sfx:SetSoundLevel(0)
+    	background_sfx:Play()
+    	//background_sfx_id = LocalPlayer():StartLoopingSound("deadeye_background")
     end
 
 	deadeye_marks = {} 
@@ -254,7 +260,7 @@ local function on_primary_attack(ent)
 		net.SendToServer()
 	end
 
-	if weapon:GetNextPrimaryFire() > 0 then
+	if weapon:GetNextPrimaryFire() > 0 and delay < 2 then
 		release_attack = true
 		timer.Simple(delay, function()
 			release_attack = false
@@ -308,6 +314,7 @@ hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd)
 end)
 
 local already_aiming = false
+local pitch_changing = false
 
 hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// update real view angle for silent aimbot
@@ -331,6 +338,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		added_a_mark = false
 		no_ammo_spent_timer = 0
 		release_attack = false
+		pitch_changing = false
 		if game.SinglePlayer() then 
 			if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
 		else
@@ -347,6 +355,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
 	else
 		deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, 10)
+	end
+
+	if max_deadeye_timer:GetFloat() - deadeye_timer > max_deadeye_timer:GetFloat() * 0.8 and not pitch_changing then
+		background_sfx:ChangePitch(255, deadeye_timer)
+		pitch_changing = true
 	end
 
 	if not LocalPlayer():Alive() then
