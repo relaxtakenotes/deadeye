@@ -466,7 +466,6 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	// deadeye aka aimbot
 	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
-		print(CurTime())
 		local tr = util.TraceLine( {
 			start = LocalPlayer():GetShootPos(),
 			endpos = current_target.pos,
