@@ -1,0 +1,13 @@
+"Refract"
+{
+	"%keywords" "tf"
+	"$refractamount" "0"
+	"$forcerefract" "1"
+	"$model" "1"
+	"$refracttint" "{255 255 255}"
+	"$normalmap" "overlays/invuln_overlay_normal"
+	"$bumpframe" "0"
+	"$bluramount" "5"
+	"$refracttinttexture" "overlays/invuln_overlay"
+}
+
