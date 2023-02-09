@@ -508,14 +508,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			cam.End3D()
 
 			if not Vector(ScrW()/2, ScrH()/2):IsEqualTol(Vector(screen_mark_pos.x, screen_mark_pos.y, 0), precision_mult) then
-				local tr = util.TraceLine({
-					start = LocalPlayer():GetShootPos(),
-					endpos = LocalPlayer():GetShootPos() + LocalPlayer():EyeAngles():Forward() * 100000,
-					filter = LocalPlayer(),
-					mask = MASK_SHOT_PORTAL,
-					ignoreworld = true
-				})
-				if tr.Entity != Entity(current_target.entindex) then cmd:RemoveKey(IN_ATTACK) end 
+				cmd:RemoveKey(IN_ATTACK)
 			end
 
 			cmd:SetViewAngles(smoothed)
