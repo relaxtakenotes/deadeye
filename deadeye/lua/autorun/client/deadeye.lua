@@ -2,7 +2,11 @@
 local deadeye_marks = {} -- used to update the cache
 local deadeye_cached_positions = {} -- actual positions of the marks in real time
 local current_target = {} -- just the first mark
+local last_target = {}
+local start_angle = Angle()
+local aim_lerp_ratio = 0
 local transferred_ragdolls = {}
+local gAimangles = Angle()
 
 local ang
 
@@ -13,6 +17,7 @@ local in_deadeye = false
 local release_attack = false
 local spamming = false
 local wait_for_target_switch = false
+local current_attack_delay = 0
 
 local previous_ammo = 0
 local previous_wep = NULL
@@ -159,6 +164,8 @@ local function toggle_deadeye()
 	release_attack = false
 	pitch_changing = false
 	transferred_ragdolls = {}
+	aim_lerp_ratio = 0
+	current_attack_delay = 0
 end
 
 local function get_hitbox_info(ent, hitboxid)
@@ -277,12 +284,13 @@ local function fix_movement(cmd, fa)
 	cmd:SetSideMove( math.sin( math.rad( yaw ) ) * vel )
 end
 
-
 local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
 	local weapon = ent:GetActiveWeapon()
-	local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.1825
+	local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+
+	current_attack_delay = delay
 
 	shooting_quota = shooting_quota - 1
 	if game.SinglePlayer() then
@@ -365,7 +373,8 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		max_deadeye_timer:SetFloat(1)
 	end
 
-	if not in_deadeye then 
+	if not in_deadeye then
+		start_angle = LocalPlayer():EyeAngles()
 		if game.SinglePlayer() then 
 			if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 5, 0, max_deadeye_timer:GetFloat()) end
 		else
@@ -413,8 +422,13 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 	end
 
-
+	last_target = current_target.pos
 	current_target = get_first_mark()
+
+	if (last_target and current_target and current_target.pos) and not last_target:IsEqualTol(current_target.pos, 1) then
+		start_angle = LocalPlayer():EyeAngles()
+		aim_lerp_ratio = 0
+	end
 
 	// no more marks, reset the quota and turn off deadeye after we're done shooting
 	if total_mark_count <= 0 then
@@ -459,7 +473,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
 		timer.Simple(0.05, function() no_ammo_spent_timer = 0 end)
 	elseif shooting_quota > 0 and total_mark_count > 0 then
-		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 10, 0, 1)
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 5, 0, 1)
 	end
 	
 	if wait_for_target_switch then cmd:RemoveKey(IN_ATTACK) return end
@@ -483,90 +497,89 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			fix_movement(cmd, ang)
 			already_aiming = true
 		else
-			local clamped_distance = math.Clamp(LocalPlayer():GetPos():Distance(current_target.pos), 1, 500)
-			local precision_mult = math.Remap(clamped_distance, 1, 500, 10, 3)
-
-			local target_position = Vector()
-			target_position:SetUnpacked(current_target.pos:Unpack())
-			local target_velocity = Entity(current_target.entindex):GetVelocity()
-			local local_velocity = LocalPlayer():GetVelocity()
-
-			local smooth_amount = RealFrameTime() * 10
-			local whatthedeuce = RealFrameTime() / engine.TickInterval() / smooth_amount
-			if deadeye_slowdown:GetBool() then whatthedeuce = whatthedeuce * 0.255 end
-
-			target_position = target_position + (target_velocity / 100) * whatthedeuce
-			target_position = target_position - (local_velocity / 100) * whatthedeuce
-
-			local aimangles = (target_position - LocalPlayer():GetShootPos()):Angle()
-			local smoothed = LerpAngle(smooth_amount, LocalPlayer():EyeAngles(), aimangles)
-
-			smoothed = Angle(smoothed.x, smoothed.y, 0)
+			local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * RealFrameTime()):Angle()
+			if current_attack_delay == 0 then
+				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * 2.5, 0, 1)
+			else
+				print(current_attack_delay, RealFrameTime())
+				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * 2.5 + math.Clamp(current_attack_delay, 0, 0.015), 0, 1)
+			end
+			local lerped_angles = LerpAngle(math.ease.InOutCubic(aim_lerp_ratio), start_angle, aimangles)
+			cmd:SetViewAngles(lerped_angles)
+			gAimangles = lerped_angles
 
 			cam.Start3D()
-				local screen_mark_pos = current_target.pos:ToScreen()
+				local screen_mark_pos = (current_target.pos - LocalPlayer():GetVelocity() * RealFrameTime()):ToScreen()
 			cam.End3D()
 
+			local clamped_distance = math.Clamp(LocalPlayer():GetPos():Distance(current_target.pos), 1, 500)
+			local precision_mult = math.Remap(clamped_distance, 1, 500, 10, 5)
 			if not Vector(ScrW()/2, ScrH()/2):IsEqualTol(Vector(screen_mark_pos.x, screen_mark_pos.y, 0), precision_mult) then
 				cmd:RemoveKey(IN_ATTACK)
 			end
+			//LocalPlayer():SetEyeAngles(lerped_angles)
 
-			cmd:SetViewAngles(smoothed)
 			already_aiming = true
 		end
 	else
+		start_angle = LocalPlayer():EyeAngles()
+		aim_lerp_ratio = 0
 		already_aiming = false
 	end
 end)
 
-hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
-	if not deadeye_transfer_to_ragdolls:GetBool() then return end
+//hook.Add("Think", "deadeye_aim_smooth", function()
+//	--if current_target.entindex and (LocalPlayer():KeyDown(IN_ATTACK) or already_aiming) and deadeye_smooth_aimbot:GetBool() then
+//	--	LocalPlayer():SetEyeAngles(gAimangles)
+//	--end
+//end)
 
-	ent.deadeye_is_dead = true
-	local found_ragdoll = false
-	local entidx = ent:EntIndex()
-	local model_name = ent:GetModel()
-	local bonepos = ent:GetBonePosition(0)
-	
-	local tr = util.TraceHull( {
-		start = bonepos,
-		endpos = bonepos,
-		mins = Vector(-10, -10, -10),
-		maxs = Vector(10, 10, 10),
-		mask = MASK_SHOT_PORTAL,
-		filter = function(entity) if entity:GetClass() == "prop_ragdoll" and entity:GetModel() == model_name then return true end end
-	})
+hook.Add("InputMouseApply", "deadeye_freeze_mouse", function(cmd)
+	if in_deadeye and current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) and deadeye_smooth_aimbot:GetBool() then
+		cmd:SetMouseX(0)
+		cmd:SetMouseY(0)
+		cmd:SetViewAngles(gAimangles)
 
-	if IsValid(tr.Entity) then
-		deadeye_marks[tr.Entity:EntIndex()] = deadeye_marks[entidx]
-		deadeye_cached_positions[tr.Entity:EntIndex()] = deadeye_cached_positions[entidx]
-		transferred_ragdolls[tr.Entity:EntIndex()] = true
-		found_ragdoll = true
+		return true
 	end
-
-	if total_mark_count > 0 and not found_ragdoll then
-		if not deadeye_marks[entidx] then return end
-		total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
-	end
-
-	deadeye_marks[entidx] = nil
-	deadeye_cached_positions[entidx] = nil
 end)
 
-hook.Add("EntityRemoved", "deadeye_cleanup_classic", function(ent)
-	if deadeye_transfer_to_ragdolls:GetBool() then return end
+net.Receive("deadeye_ragdoll_created", function() 
+	local owner = net.ReadEntity()
+	local ragdoll = net.ReadEntity()
+
+	timer.Simple(0, function()
+		owner.deadeye_is_dead = true
+		if deadeye_transfer_to_ragdolls:GetBool() then
+			deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
+			deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
+			if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
+			transferred_ragdolls[ragdoll:EntIndex()] = true
+
+			deadeye_marks[owner:EntIndex()] = nil
+			deadeye_cached_positions[owner:EntIndex()] = nil
+		end
+
+		if total_mark_count > 0 then
+			if not deadeye_marks[owner:EntIndex()] then return end
+			total_mark_count = total_mark_count - table.Count(deadeye_marks[owner:EntIndex()])
+		end
+
+	end)
+end)
+
+hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
+	if ent:IsNPC() or ent:IsPlayer() then return end
 
 	ent.deadeye_is_dead = true
 
-	local entidx = ent:EntIndex()
-
 	if total_mark_count > 0 then
-		if not deadeye_marks[entidx] then return end
-		total_mark_count = total_mark_count - table.Count(deadeye_marks[entidx])
+		if not deadeye_marks[ent:EntIndex()] then return end
+		total_mark_count = total_mark_count - table.Count(deadeye_marks[ent:EntIndex()])
 	end
 
-	deadeye_marks[entidx] = nil
-	deadeye_cached_positions[entidx] = nil
+	deadeye_marks[ent:EntIndex()] = nil
+	deadeye_cached_positions[ent:EntIndex()] = nil
 end)
 
 hook.Add("ChatText", "deadeye_hide_cvar_changes", function(index, name, text, type)
@@ -599,6 +612,7 @@ local ca_r = Material("overlays/ca_r")
 local ca_g = Material("overlays/ca_g")
 local ca_b = Material("overlays/ca_b")
 local black = Material("vgui/black")
+local highlight = Material("overlays/highlight")
 
 hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 	local tab = {
@@ -621,24 +635,38 @@ hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 
 	if pp_lerp > 0 then
 		DrawColorModify(tab)
-
 		render.UpdateScreenEffectTexture()
-
 		vignettemat:SetFloat("$alpha", pp_lerp)
 		render.SetMaterial(vignettemat)
 		render.DrawScreenQuad()
+
+		local stint = tostring(pp_lerp/100)
+
+		highlight:SetVector("$selfillumtint", Vector(stint, stint, stint))
+		highlight:SetVector("$envmaptint", Vector(pp_lerp, pp_lerp, pp_lerp))
+		cam.Start3D()
+			for _, ent in ipairs(ents.GetAll()) do 
+				if ent.deadeye_is_dead then continue end
+				if not ent:GetModel() then continue end
+				local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank")
+				if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
+				render.MaterialOverride(highlight)
+				render.SuppressEngineLighting(true)
+				ent:DrawModel()
+				render.SuppressEngineLighting(false)
+			end
+		cam.End3D()
 	end
 
 	if distort_lerp > 0 and not deadeye_infinite:GetBool() then
 		distortmat:SetFloat("$refractamount", math.Remap(math.ease.InQuart(distort_lerp), 0, 1, 0, 0.15))
-		render.SetMaterial(distortmat)
 		render.UpdateScreenEffectTexture()
+		render.SetMaterial(distortmat)
 		render.DrawScreenQuad()
-
 		render.UpdateScreenEffectTexture()
 
 		local mult = math.ease.InQuart(distort_lerp) * 2
-
+		render.UpdateScreenEffectTexture()
 		render.SetMaterial(black)
 		render.DrawScreenQuad()
 		render.SetMaterial(ca_r)
@@ -648,27 +676,6 @@ hook.Add("RenderScreenspaceEffects", "deadeye_overlay", function()
 		render.SetMaterial(ca_b)
 		render.DrawScreenQuad()
 	end
-end)
-
-local highlight = Material("overlays/highlight")
-hook.Add("RenderScreenspaceEffects", "deadeye_entity_overlay", function()
-	if pp_lerp <= 0 then return end
-
-	local stint = tostring(pp_lerp/100)
-
-	highlight:SetVector("$selfillumtint", Vector(stint, stint, stint))
-	highlight:SetVector("$envmaptint", Vector(pp_lerp, pp_lerp, pp_lerp))
-
-	cam.Start3D()
-	for _, ent in ipairs(ents.GetAll()) do 
-		if ent.deadeye_is_dead then continue end
-		if not ent:GetModel() then continue end
-		local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank")
-		if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
-		render.MaterialOverride(highlight)
-		ent:DrawModel()
-	end
-	cam.End3D()
 end)
 
 local pp_no_deadeye_lerp_second = 0

@@ -5,6 +5,7 @@ end
 util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
 util.AddNetworkString("deadeye_primaryfire_time")
+util.AddNetworkString("deadeye_ragdoll_created")
 
 local in_deadeye = false
 local in_deadeye_prev = false
@@ -41,6 +42,13 @@ local function restore_vars()
 		convar:SetFloat(accuracy_vars_original[key])
 	end
 end
+
+hook.Add("CreateEntityRagdoll", "deadeye_ragdoll_notify", function(owner, entity) 
+	net.Start("deadeye_ragdoll_created", true)
+	net.WriteEntity(owner)
+	net.WriteEntity(entity)
+	net.Broadcast()
+end)
 
 hook.Add("EntityTakeDamage", "deadeye_randommiss", function(ent, dmg)
 	if in_deadeye and ent:IsPlayer() and dmg:GetAttacker():IsNPC() then
@@ -99,8 +107,9 @@ end)
 net.Receive("deadeye_primaryfire_time", function(len, ply)
 	if slowdown and ply:GetActiveWeapon():GetNextPrimaryFire() > 0 then
 		local weapon = ply:GetActiveWeapon()
-		local delay = weapon:GetNextPrimaryFire() - weapon:LastShootTime()
-		weapon:SetNextPrimaryFire(CurTime() + delay * 0.1825)
+		local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+
+		weapon:SetNextPrimaryFire(CurTime() + delay)
 	end
 end)
 
