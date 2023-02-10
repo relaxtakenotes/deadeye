@@ -1,0 +1,14 @@
+"VertexLitGeneric" {
+	"$basetexture" "vgui/white"
+	"$bumpmap" "models/player/shared/shared_normal"
+	"$envmap" "vgui/white"
+	"$envmapfresnel" "1"
+	"$phong" "1"
+	"$phongfresnelranges" "[0.01 0.1 0.5]"
+	"$selfillum" "1"
+	"$selfillumfresnel" "1"
+	"$selfillumfresnelminmaxexp" "[1 0.6 0.1]"
+	"$selfillumtint" "[0.01 0.01 0.01]"
+	"$envmaptint" "[1 1 1]"
+	"$additive" "1"
+}
