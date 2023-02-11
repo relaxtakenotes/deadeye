@@ -116,7 +116,6 @@ net.Receive("deadeye_primaryfire_time", function(len, ply)
 		local weapon = ply:GetActiveWeapon()
 		local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
 
-
 		weapon:SetNextPrimaryFire(CurTime() + delay)
 	end
 end)

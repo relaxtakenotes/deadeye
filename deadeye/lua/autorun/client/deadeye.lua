@@ -157,7 +157,6 @@ local function toggle_deadeye()
 	deadeye_marks = {} 
 	deadeye_cached_positions = {}
     shooting_quota = 0
-    total_mark_count = 0
     mark_brightness = {}
 	added_a_mark = false
 	no_ammo_spent_timer = 0
@@ -166,6 +165,16 @@ local function toggle_deadeye()
 	aim_lerp_ratio = 0
 	current_attack_delay = 0
 	gAimangles = Angle()
+end
+
+local function is_usable_for_deadeye(ent)
+	if not IsValid(ent) or not ent.GetModel or not ent.GetClass then return false end
+	if not ent:GetModel() or not ent:GetClass() then return false end 
+	local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank") or string.find(ent:GetClass(), "npc_grenade_frag")
+
+	if not ent:IsNPC() and not is_explosive and not ent:IsPlayer() then return false end
+
+	return true
 end
 
 local function get_hitbox_info(ent, hitboxid)
@@ -198,9 +207,7 @@ local function create_deadeye_point()
 
 	if tr.Entity == NULL or not IsValid(tr.Entity) then return end
 
-	local is_explosive = string.find(tr.Entity:GetModel(), "explosive") or string.find(tr.Entity:GetModel(), "gascan") or string.find(tr.Entity:GetModel(), "propane_tank") or string.find(tr.Entity:GetClass(), "npc_grenade_frag")
-
-	if not tr.Entity:IsNPC() and not is_explosive and not tr.Entity:IsPlayer() then return end
+	if not is_usable_for_deadeye(tr.Entity) then return end
 
 	added_a_mark = true
 
@@ -223,7 +230,6 @@ local function create_deadeye_point()
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
 
-	total_mark_count = total_mark_count + 1
 	LocalPlayer():EmitSound("deadeye_mark")
 end
 
@@ -244,9 +250,9 @@ local function get_correct_mark_pos(ent, data)
 end
 
 local function remove_mark(entindex, index)
+	print("removed", Entity(entindex), index)
 	if deadeye_marks[entindex] then table.remove(deadeye_marks[entindex], index) end
 	if deadeye_cached_positions[entindex] then table.remove(deadeye_cached_positions[entindex], index) end
-	total_mark_count = math.abs(total_mark_count - 1)
 end
 
 local function get_first_mark()
@@ -294,10 +300,10 @@ local function on_primary_attack(ent)
 	local weapon = ent:GetActiveWeapon()
 	local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
 
-
 	current_attack_delay = delay
-
-	shooting_quota = shooting_quota - 1
+	if shooting_quota > 0 then
+		shooting_quota = total_mark_count
+	end
 	if game.SinglePlayer() then
 		net.Start("deadeye_primaryfire_time")
 		net.WriteBool(true)
@@ -375,7 +381,6 @@ local pitch_changing = false
 
 hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// update real view angle for silent aimbot
-
 	if not deadeye_smooth_aimbot:GetBool() then
 		if (!ang) then ang = cmd:GetViewAngles() end
 		ang = ang + Angle(cmd:GetMouseY() * .023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), cmd:GetMouseX() * -.023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), 0)
@@ -399,6 +404,11 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			deadeye_timer = math.Clamp(deadeye_timer + deadeye_timer_fraction * RealFrameTime() / 2, 0, math.Clamp(max_deadeye_timer:GetFloat(), 0, 10))
 		end
 		return 
+	end
+
+	total_mark_count = 0
+	for _, tbl in pairs(deadeye_marks) do
+		total_mark_count = total_mark_count + table.Count(tbl)
 	end
 
 	if SetViewPunchAngles then
@@ -487,13 +497,15 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	end
 
 	//print(LocalPlayer():GetActiveWeapon():GetTriggerDelta())
-
+	local currently_waiting = false
 	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
 	if current_target.entindex and (release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0)) then
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
-		timer.Simple(0.015, function() no_ammo_spent_timer = 0 end)
+		timer.Simple(engine.TickInterval()*2, function() no_ammo_spent_timer = 0 end)
+		currently_waiting = true
 	elseif shooting_quota > 0 and total_mark_count > 0 then
-		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 7, 0, 1)
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 10, 0, 1)
+		currently_waiting = false
 	end
 	
 	if wait_for_target_switch then cmd:RemoveKey(IN_ATTACK) return end
@@ -534,7 +546,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 			if aim_lerp_ratio < 1 then
 				cmd:RemoveKey(IN_ATTACK)
-			else
+			elseif not currently_waiting then
 				cmd:AddKey(IN_ATTACK)
 			end
 
@@ -559,39 +571,35 @@ hook.Add("InputMouseApply", "deadeye_freeze_mouse", function(cmd)
 	end
 end)
 
+local on_removal = {}
+
 net.Receive("deadeye_ragdoll_created", function() 
 	local owner = net.ReadEntity()
 	local ragdoll = net.ReadEntity()
-
+	if not is_usable_for_deadeye(owner) then return end
+	owner.deadeye_on_removal = true
+	
 	timer.Simple(0, function()
 		owner.deadeye_is_dead = true
 		if deadeye_transfer_to_ragdolls:GetBool() then
-			deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
-			deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
-			if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
-			transferred_ragdolls[ragdoll:EntIndex()] = true
-
+			if IsValid(ragdoll) then
+				deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
+				deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
+				if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
+				transferred_ragdolls[ragdoll:EntIndex()] = true
+			end
 			deadeye_marks[owner:EntIndex()] = nil
 			deadeye_cached_positions[owner:EntIndex()] = nil
 		end
-
-		if total_mark_count > 0 then
-			if not deadeye_marks[owner:EntIndex()] then return end
-			total_mark_count = total_mark_count - table.Count(deadeye_marks[owner:EntIndex()])
-		end
-
 	end)
 end)
 
 hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
-	if ent:IsNPC() or ent:IsPlayer() then return end
+	if not is_usable_for_deadeye(ent) then return end
+	if ent.deadeye_on_removal then return end // we already dealt with it
+	if not deadeye_marks[ent:EntIndex()] then return end
 
 	ent.deadeye_is_dead = true
-
-	if total_mark_count > 0 then
-		if not deadeye_marks[ent:EntIndex()] then return end
-		total_mark_count = total_mark_count - table.Count(deadeye_marks[ent:EntIndex()])
-	end
 
 	deadeye_marks[ent:EntIndex()] = nil
 	deadeye_cached_positions[ent:EntIndex()] = nil
@@ -640,8 +648,9 @@ hook.Add("RenderScreenspaceEffects", "zzzxczxc_deadeye_overlay", function()
 			for _, ent in ipairs(ents.GetAll()) do
 				if ent.deadeye_is_dead then continue end
 				if not ent:GetModel() then continue end
-				local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank") or string.find(ent:GetModel(), "npc_grenade_frag")
-				if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
+				//local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank") or string.find(ent:GetModel(), "npc_grenade_frag")
+				//if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
+				if not transferred_ragdolls[ent:EntIndex()] and not is_usable_for_deadeye(ent) then continue end
 				if ent == LocalPlayer() or ent == LocalPlayer():GetActiveWeapon() then continue end
 				render.MaterialOverride(highlight)
 				render.SuppressEngineLighting(true)
