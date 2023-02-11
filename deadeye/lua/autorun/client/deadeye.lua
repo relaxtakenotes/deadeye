@@ -55,11 +55,11 @@ local actual_sens = CreateConVar("cl_deadeye_mouse_sensitivity", "1", {FCVAR_ARC
 
 if not game.SinglePlayer() then 
 	hook.Add("InitPostEntity", "deadeye_warning", function() 
-		Derma_Message("To prevent creating a major exploit the server wont increase your accuracy, speed you up or reduce damage and some values are forced. \nPlay in SinglePlayer to experience the mod fully.", "Deadeye in Multiplayer", "wow frick u")
+		Derma_Message("Deadeye doesn't formally support MultiPlayer, however if you are fine with a few bugs and play only with your friends you can enjoy this mod. If otherwise please play on SinglePlayer!", "Notice", "ok ty")
 	end)
 end
 
-sound.Add( {
+sound.Add({
 	name = "deadeye_start",
 	channel = CHAN_STATIC,
 	volume = 1.0,
@@ -68,7 +68,7 @@ sound.Add( {
 	sound = {"deadeye/start1.wav", "deadeye/start2.wav"} 
 })
 
-sound.Add( {
+sound.Add({
 	name = "deadeye_mark",
 	channel = CHAN_STATIC,
 	volume = 1.0,
@@ -77,7 +77,7 @@ sound.Add( {
 	sound = "deadeye/mark.wav"
 })
 
-sound.Add( {
+sound.Add({
 	name = "deadeye_click",
 	channel = CHAN_STATIC,
 	volume = 0.5,
@@ -87,7 +87,7 @@ sound.Add( {
 })
 
 
-sound.Add( {
+sound.Add({
 	name = "deadeye_end",
 	channel = CHAN_STATIC,
 	volume = 1.0,
@@ -96,7 +96,7 @@ sound.Add( {
 	sound = "deadeye/end.wav"
 })
 
-sound.Add( {
+sound.Add({
 	name = "deadeye_background",
 	channel = CHAN_STATIC,
 	volume = 1.0,
@@ -113,12 +113,12 @@ local function toggle_deadeye()
 	timer.Simple(0.1, function() spamming = false end)
 
 	if not LocalPlayer():Alive() or not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 or (deadeye_timer < 1 and not deadeye_infinite:GetBool()) then
-		if game.SinglePlayer() then
-		    net.Start("in_deadeye")
-		    	net.WriteBool(false)
-		    	net.WriteBool(deadeye_slowdown:GetBool())
-		    net.SendToServer()
-		end
+
+	    net.Start("in_deadeye")
+	    	net.WriteBool(false)
+	    	net.WriteBool(deadeye_slowdown:GetBool())
+	    net.SendToServer()
+
 	    if not in_deadeye then
 	    	LocalPlayer():EmitSound("deadeye_click")
 			pp_no_deadeye_lerp = 1
@@ -132,12 +132,10 @@ local function toggle_deadeye()
 
 	in_deadeye = !in_deadeye
 
-	if game.SinglePlayer() then
-	    net.Start("in_deadeye")
-	    	net.WriteBool(in_deadeye)
-	    	net.WriteBool(deadeye_slowdown:GetBool())
-	    net.SendToServer()
-	end
+    net.Start("in_deadeye")
+    	net.WriteBool(in_deadeye)
+    	net.WriteBool(deadeye_slowdown:GetBool())
+    net.SendToServer()
 
     if not in_deadeye then
 		LocalPlayer():EmitSound("deadeye_end")
@@ -198,7 +196,7 @@ local function create_deadeye_point()
 
 	local lp = LocalPlayer()
 
-	local tr = util.TraceLine( {
+	local tr = util.TraceLine({
 		start = LocalPlayer():EyePos(),
 		endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
 		filter = LocalPlayer(),
@@ -207,7 +205,7 @@ local function create_deadeye_point()
 
 	if (tr.Entity == NULL or not IsValid(tr.Entity)) or not is_usable_for_deadeye(tr.Entity) then
 
-		local tr_h = util.TraceHull( {
+		local tr_h = util.TraceHull({
 			start = LocalPlayer():EyePos(),
 			endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
 			filter = LocalPlayer(),
@@ -244,7 +242,6 @@ local function create_deadeye_point()
 
 	LocalPlayer():EmitSound("deadeye_mark")
 end
-
 
 local function get_correct_mark_pos(ent, data)	
 	local matrix = get_hitbox_matrix(ent, data.hitbox_id)
@@ -296,14 +293,14 @@ local function fix_movement(cmd, fa)
 	local mang = vec:Angle()
 	local yaw = cmd:GetViewAngles().y - fa.y + mang.y
  
-	if ( ( cmd:GetViewAngles().p + 90 ) % 360 ) > 180 then
+	if ((cmd:GetViewAngles().p + 90) % 360) > 180 then
 		yaw = 180 - yaw
 	end
  
-	yaw = ( ( yaw + 180 ) % 360 ) - 180
+	yaw = ((yaw + 180) % 360) - 180
 
-	cmd:SetForwardMove( math.cos( math.rad( yaw ) ) * vel )
-	cmd:SetSideMove( math.sin( math.rad( yaw ) ) * vel )
+	cmd:SetForwardMove(math.cos(math.rad(yaw)) * vel)
+	cmd:SetSideMove(math.sin(math.rad(yaw)) * vel)
 end
 
 net.Receive("deadeye_shot", function()
@@ -318,7 +315,7 @@ net.Receive("deadeye_shot", function()
 	end
 
 	if game.SinglePlayer() then
-		local tr = util.TraceHull( {
+		local tr = util.TraceHull({
 			start = LocalPlayer():EyePos(),
 			endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
 			filter = LocalPlayer(),
@@ -510,7 +507,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 		local actual_shoot_position = LocalPlayer():GetShootPos() + LocalPlayer():GetVelocity() * engine.TickInterval() - Entity(current_target.entindex):GetVelocity() * engine.TickInterval()
 
-		local tr = util.TraceLine( {
+		local tr = util.TraceLine({
 			start = LocalPlayer():GetShootPos(),
 			endpos = current_target.pos,
 			filter = LocalPlayer(),
@@ -553,7 +550,6 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		already_aiming = false
 	end
 end)
-
 
 hook.Add("InputMouseApply", "deadeye_freeze_mouse", function(cmd)
 	if in_deadeye and current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) and deadeye_smooth_aimbot:GetBool() then

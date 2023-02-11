@@ -1,7 +1,3 @@
-if not game.SinglePlayer() then 
-	return 
-end
-
 util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
 util.AddNetworkString("deadeye_primaryfire_time")
@@ -9,8 +5,8 @@ util.AddNetworkString("deadeye_ragdoll_created")
 util.AddNetworkString("deadeye_destroy_grenade")
 util.AddNetworkString("deadeye_shot")
 
-local in_deadeye = false
-local in_deadeye_prev = false
+local in_deadeye = {}
+local in_deadeye_prev = {}
 local slowdown = false
 
 local accuracy_vars = {}
@@ -59,13 +55,13 @@ hook.Add("CreateEntityRagdoll", "deadeye_ragdoll_notify", function(owner, entity
 end)
 
 hook.Add("EntityTakeDamage", "deadeye_randommiss", function(ent, dmg)
-	if in_deadeye and ent:IsPlayer() and dmg:GetAttacker():IsNPC() then
+	if in_deadeye[ent] and ent:IsPlayer() and dmg:GetAttacker():IsNPC() then
 		if math.random(0,1) == 1 then return true end
 	end
 end)
 
 hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
-	if in_deadeye then
+	if in_deadeye[ent] then
 		local weapon = ply:GetActiveWeapon()
 		ply:SetViewPunchAngles(Angle(0, 0, 0))
 		ply:SetViewPunchVelocity(Angle(0, 0, 0))
@@ -81,20 +77,27 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
         if slowdown then game.SetTimeScale(0.2) end
 	end
 
-	if in_deadeye != in_deadeye_prev and in_deadeye then
-		zero_out_vars()
-	elseif in_deadeye != in_deadeye_prev and not in_deadeye then
-		restore_vars()
-	end
+    if game.SinglePlayer() then
+    	if in_deadeye[ply] != in_deadeye_prev[ply] and in_deadeye[ply] then
+    		zero_out_vars()
+    	elseif in_deadeye[ply] != in_deadeye_prev[ply] and not in_deadeye[ply] then
+    		restore_vars()
+    	end
+    end
 
-	in_deadeye_prev = in_deadeye
+	in_deadeye_prev[ply] = in_deadeye[ply]
 end)
 
 net.Receive("in_deadeye", function(len,ply) 
-	in_deadeye = net.ReadBool()
-	slowdown = net.ReadBool()
+	in_deadeye[ply] = net.ReadBool()
 
-	if in_deadeye then
+    if game.SinglePlayer() then
+        slowdown = net.ReadBool()
+    else
+        slowdown = false
+    end
+
+	if in_deadeye[ply] then
 		local weapon = ply:GetActiveWeapon()
 
 		pcall(function() 
@@ -116,14 +119,19 @@ net.Receive("in_deadeye", function(len,ply)
 end)
 
 local function networkGunshotEvent(data)
-	if not in_deadeye then return end
+	if not in_deadeye[data.Entity] then return end
     if data.Entity:IsPlayer() then
-		local delay = (data.Weapon:GetNextPrimaryFire() - CurTime()) * 0.2
-		data.Weapon:SetNextPrimaryFire(CurTime() + delay)
+        local delay = 0
+        if slowdown then
+    		delay = (data.Weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+    		data.Weapon:SetNextPrimaryFire(CurTime() + delay)
+        else
+            delay = data.Weapon:GetNextPrimaryFire() - CurTime()
+        end
 
     	net.Start("deadeye_shot")
     	net.WriteFloat(delay)
-    	net.Broadcast()
+    	net.Send(data.Entity)
     end
 end
 
