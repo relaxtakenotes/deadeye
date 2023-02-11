@@ -205,9 +205,21 @@ local function create_deadeye_point()
 		mask = MASK_SHOT_PORTAL
 	})
 
-	if tr.Entity == NULL or not IsValid(tr.Entity) then return end
+	if (tr.Entity == NULL or not IsValid(tr.Entity)) or not is_usable_for_deadeye(tr.Entity) then
 
-	if not is_usable_for_deadeye(tr.Entity) then return end
+		local tr_h = util.TraceHull( {
+			start = LocalPlayer():EyePos(),
+			endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
+			filter = LocalPlayer(),
+			mins = Vector(-10, -10, -10),
+			maxs = Vector(10, 10, 10),
+			mask = MASK_SHOT_PORTAL
+		})
+
+		if (tr_h.Entity == NULL or not IsValid(tr_h.Entity)) or not is_usable_for_deadeye(tr_h.Entity) or not string.find(tr_h.Entity:GetClass(), "npc_grenade_frag") then return end
+
+		tr = tr_h
+	end
 
 	added_a_mark = true
 
@@ -294,25 +306,24 @@ local function fix_movement(cmd, fa)
 	cmd:SetSideMove( math.sin( math.rad( yaw ) ) * vel )
 end
 
-local function on_primary_attack(ent)
+net.Receive("deadeye_shot", function()
 	if not in_deadeye then return end
 
-	local weapon = ent:GetActiveWeapon()
-	local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
+	local weapon = LocalPlayer():GetActiveWeapon()
+	local delay = net.ReadFloat()
 
 	current_attack_delay = delay
 	if shooting_quota > 0 then
 		shooting_quota = total_mark_count
 	end
-	if game.SinglePlayer() then
-		net.Start("deadeye_primaryfire_time")
-		net.WriteBool(true)
-		net.SendToServer()
 
-		local tr = util.TraceLine({
-			start = LocalPlayer():GetShootPos(),
-			endpos = LocalPlayer():GetShootPos() + LocalPlayer():EyeAngles():Forward()*100000,
+	if game.SinglePlayer() then
+		local tr = util.TraceHull( {
+			start = LocalPlayer():EyePos(),
+			endpos = LocalPlayer():EyePos() + LocalPlayer():EyeAngles():Forward() * 10000,
 			filter = LocalPlayer(),
+			mins = Vector(-10, -10, -10),
+			maxs = Vector(10, 10, 10),
 			mask = MASK_SHOT_PORTAL
 		})
 
@@ -340,7 +351,7 @@ local function on_primary_attack(ent)
 	local mark = get_first_mark()
 	if table.Count(mark) <= 0 then return end
 	remove_mark(mark.entindex, mark.index)
-end
+end)
 
 hook.Add("Think", "debug_deadyee", function() 
 	if engine.TickCount() % 20 and deadeye_debug:GetBool() then
@@ -358,22 +369,6 @@ hook.Add("Think", "debug_deadyee", function()
 		print("no_ammo_spent_timer: ", no_ammo_spent_timer)
 		print("----------------------------------")
 	end
-end)
-
-hook.Add("CreateMove", "deadeye_detect_primaryfire", function(cmd) 
-	local ply = LocalPlayer()
-	if not ply:Alive() then return end
-
-	local wep = ply:GetActiveWeapon()
-	if not wep or not wep.Clip1 then return end
-	local current_ammo = wep:Clip1()
-
-	if current_ammo < previous_ammo and not (wep != previous_wep) then
-		on_primary_attack(ply, wep)
-	end
-	
-	previous_ammo = current_ammo
-	previous_wep = wep
 end)
 
 local already_aiming = false
@@ -468,9 +463,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 	end
 
-	if cmd:KeyDown(IN_ATTACK) and not added_a_mark then
-		toggle_deadeye()
-	end
+	//if cmd:KeyDown(IN_ATTACK) and not added_a_mark then
+	//	toggle_deadeye()
+	//end
 
 	if not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 then
 		toggle_deadeye()
@@ -573,7 +568,8 @@ end)
 
 local on_removal = {}
 
-net.Receive("deadeye_ragdoll_created", function() 
+net.Receive("deadeye_ragdoll_created", function()
+	if not deadeye_transfer_to_ragdolls:GetBool() then return end
 	local owner = net.ReadEntity()
 	local ragdoll = net.ReadEntity()
 	if not is_usable_for_deadeye(owner) then return end
@@ -581,16 +577,14 @@ net.Receive("deadeye_ragdoll_created", function()
 	
 	timer.Simple(0, function()
 		owner.deadeye_is_dead = true
-		if deadeye_transfer_to_ragdolls:GetBool() then
-			if IsValid(ragdoll) then
-				deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
-				deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
-				if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
-				transferred_ragdolls[ragdoll:EntIndex()] = true
-			end
-			deadeye_marks[owner:EntIndex()] = nil
-			deadeye_cached_positions[owner:EntIndex()] = nil
+		if IsValid(ragdoll) then
+			deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
+			deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
+			if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
+			transferred_ragdolls[ragdoll:EntIndex()] = true
 		end
+		deadeye_marks[owner:EntIndex()] = nil
+		deadeye_cached_positions[owner:EntIndex()] = nil
 	end)
 end)
 

@@ -7,6 +7,7 @@ util.AddNetworkString("in_deadeye")
 util.AddNetworkString("deadeye_primaryfire_time")
 util.AddNetworkString("deadeye_ragdoll_created")
 util.AddNetworkString("deadeye_destroy_grenade")
+util.AddNetworkString("deadeye_shot")
 
 local in_deadeye = false
 local in_deadeye_prev = false
@@ -73,6 +74,11 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 		if weapon.Trigger and weapon:GetTriggerDelta() < 1 then
 			weapon:SetTriggerDelta(1)
 		end
+
+		local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+		weapon:SetNextPrimaryFire(CurTime() + delay)
+
+        if slowdown then game.SetTimeScale(0.2) end
 	end
 
 	if in_deadeye != in_deadeye_prev and in_deadeye then
@@ -82,42 +88,6 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 	end
 
 	in_deadeye_prev = in_deadeye
-end)
-
-hook.Add("EntityFireBullets", "deadeye_spread", function(attacker, data)
-	if not in_deadeye then return end
-
-    local entity = NULL
-    local weapon = NULL
-    local weaponIsWeird = false
-
-    if attacker:IsPlayer() or attacker:IsNPC() then
-        entity = attacker
-        weapon = entity:GetActiveWeapon()
-    else
-        weapon = attacker
-        entity = weapon:GetOwner()
-        if entity == NULL then 
-            entity = attacker
-            weaponIsWeird = true
-        end
-    end
-
-    if weaponIsWeird then return end
-
-    if entity:IsPlayer() then
-    	data.Spread = Vector(0,0,0)
-    	return true
-    end
-end)
-
-net.Receive("deadeye_primaryfire_time", function(len, ply)
-	if slowdown and ply:GetActiveWeapon():GetNextPrimaryFire() > 0 then
-		local weapon = ply:GetActiveWeapon()
-		local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
-
-		weapon:SetNextPrimaryFire(CurTime() + delay)
-	end
 end)
 
 net.Receive("in_deadeye", function(len,ply) 
@@ -143,4 +113,208 @@ net.Receive("in_deadeye", function(len,ply)
 	else
 		if slowdown then game.SetTimeScale(1) end
 	end
+end)
+
+local function networkGunshotEvent(data)
+	if not in_deadeye then return end
+    if data.Entity:IsPlayer() then
+		local delay = (data.Weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+		data.Weapon:SetNextPrimaryFire(CurTime() + delay)
+
+    	net.Start("deadeye_shot")
+    	net.WriteFloat(delay)
+    	net.Broadcast()
+    end
+end
+
+function arc9_deadeye_detour(args)
+    local bullet = args[2]
+    local attacker = bullet.Attacker
+
+    if attacker.deadeye_shotThisTick == nil then attacker.deadeye_shotThisTick = false end
+    if attacker.deadeye_shotThisTick then return end
+    if table.Count(bullet.Damaged) != 0 or bullet.deadeye_detected then return end
+
+    local weapon = bullet.Weapon
+    local weaponClass = weapon:GetClass()
+    local pos = attacker:GetShootPos()
+    local ammotype = bullet.Weapon.Primary.Ammo
+    local dir = bullet.Vel:Angle():Forward()
+    local vel = bullet.Vel
+
+    timer.Simple(0, function()
+        local data = {}
+        data.Entity = attacker
+        data.Weapon = attacker:GetActiveWeapon()
+        networkGunshotEvent(data)
+    end)
+    bullet.deadeye_detected = true
+    attacker.deadeye_shotThisTick = true
+
+    timer.Simple(engine.TickInterval()*2, function() attacker.deadeye_shotThisTick = false end)
+end
+
+hook.Add("InitPostEntity", "deadeye_create_physbul_hooks", function()
+    if ARC9 then
+        function deadeye_wrapfunction(a)    -- a = old function
+          return function(...)
+            local args = { ... }
+            arc9_deadeye_detour(args)
+            return a(...)
+          end
+        end
+        ARC9.SendBullet = deadeye_wrapfunction(ARC9.SendBullet)
+    end
+
+    if TFA then
+        hook.Add("Think", "deadeye_detecttfaphys", function()
+            local latestPhysBullet = TFA.Ballistics.Bullets["bullet_registry"][table.Count(TFA.Ballistics.Bullets["bullet_registry"])]
+            if latestPhysBullet == nil then return end
+            if latestPhysBullet["deadeye_detected"] then return end
+
+            local weapon = latestPhysBullet["inflictor"]
+            local weaponClass = weapon:GetClass()
+
+            local pos = latestPhysBullet["bul"]["Src"]
+            local ammotype = weapon.Primary.Ammo
+            local dir = latestPhysBullet["velocity"]:Angle():Forward()
+            local vel = latestPhysBullet["velocity"]
+            local entity = latestPhysBullet["inflictor"]:GetOwner()
+
+            if entity.deadeye_shotThisTick == nil then entity.deadeye_shotThisTick = false end
+            if entity.deadeye_shotThisTick then return end
+            entity.deadeye_shotThisTick = true
+            timer.Simple(engine.TickInterval()*2, function() entity.deadeye_shotThisTick = false end)
+
+            local data = {}
+            data.Entity = latestPhysBullet["inflictor"]:GetOwner()
+            data.Weapon = latestPhysBullet["inflictor"]
+            networkGunshotEvent(data)
+
+            latestPhysBullet["deadeye_detected"] = true
+        end)
+    end
+
+    if ArcCW then
+        hook.Add("Think", "deadeye_detectarccwphys", function()
+            if ArcCW.PhysBullets[table.Count(ArcCW.PhysBullets)] == nil then return end
+            local latestPhysBullet = ArcCW.PhysBullets[table.Count(ArcCW.PhysBullets)]
+            if latestPhysBullet["deadeye_detected"] then return end
+            if latestPhysBullet["Attacker"] == Entity(0) then return end
+            local entity = latestPhysBullet["Attacker"]
+
+            if entity.deadeye_shotThisTick == nil then entity.deadeye_shotThisTick = false end
+            if entity.deadeye_shotThisTick then return end
+            entity.deadeye_shotThisTick = true
+            timer.Simple(engine.TickInterval()*2, function() entity.deadeye_shotThisTick = false end)
+
+            local weapon = latestPhysBullet["Weapon"]
+            local weaponClass = weapon:GetClass()
+
+            local pos = latestPhysBullet["Pos"]
+            local ammotype = weapon.Primary.Ammo
+            local dir = latestPhysBullet["Vel"]:Angle():Forward()
+            local vel = latestPhysBullet["Vel"]
+
+            local data = {}
+            data.Entity = latestPhysBullet["Attacker"]
+            data.Weapon = latestPhysBullet["Attacker"]:GetActiveWeapon()
+            networkGunshotEvent(data)
+            
+            latestPhysBullet["deadeye_detected"] = true
+        end)
+    end
+
+    if MW_ATTS then -- global var from mw2019 sweps
+        hook.Add("OnEntityCreated", "deadeye_detectmw2019phys", function(ent)
+            if ent:GetClass() != "mg_sniper_bullet" and ent:GetClass() != "mg_slug" then return end
+            timer.Simple(0, function()
+                local attacker = ent:GetOwner()
+                local entity = attacker
+                local weapon = attacker:GetActiveWeapon()
+                local pos = ent.LastPos
+                local dir = (ent:GetPos() - ent.LastPos):GetNormalized()
+                local vel = ent:GetAngles():Forward() * ent.Projectile.Speed
+                local ammotype = "none"
+                if weapon.Primary and weapon.Primary.Ammo then ammotype = weapon.Primary.Ammo end
+
+                if entity.deadeye_shotThisTick == nil then entity.deadeye_shotThisTick = false end
+                if entity.deadeye_shotThisTick then return end
+                entity.deadeye_shotThisTick = true
+                timer.Simple(engine.TickInterval()*2, function() entity.deadeye_shotThisTick = false end)
+
+                local data = {}
+                data.Entity = attacker
+                data.Weapon = attacker:GetActiveWeapon()
+
+                networkGunshotEvent(data)
+            end)
+        end)
+    end
+
+    hook.Remove("InitPostEntity", "deadeye_create_physbul_hooks")
+end)
+
+hook.Add("EntityFireBullets", "deadeye_EntityFireBullets", function(attacker, data)
+    if data.Spread.z == 0.125 then return end -- for my blood decal workaround for mw sweps
+
+    local entity = NULL
+    local weapon = NULL
+    local weaponIsWeird = false
+    local isSuppressed = false
+    local ammotype = "none"
+
+    if attacker:IsPlayer() or attacker:IsNPC() then
+        entity = attacker
+        weapon = entity:GetActiveWeapon()
+    else
+        weapon = attacker
+        entity = weapon:GetOwner()
+        if entity == NULL then 
+            entity = attacker
+            weaponIsWeird = true
+        end
+    end
+
+    if not weaponIsWeird and weapon != NULL and entity.GetShootPos != nil then -- should solve all of the issues caused by external bullet sources (such as the turret mod)
+        local weaponClass = weapon:GetClass()
+        local entityShootPos = entity:GetShootPos()
+
+        if weaponClass == "mg_arrow" then return end -- mw2019 sweps crossbow
+        if weaponClass == "mg_sniper_bullet" and data.Spread == Vector(0,0,0) then return end -- physical bullets in mw2019
+        if weaponClass == "mg_slug" and data.Spread == Vector(0,0,0) then return end -- physical bullets in mw2019
+
+        if data.Distance < 200 then return end -- melee
+
+        if string.StartWith(weaponClass, "arccw_") then
+            if data.Distance == 20000 then -- grenade launchers in arccw
+                return
+            end
+            if GetConVar("arccw_bullet_enable"):GetInt() == 1 and data.Spread == Vector(0, 0, 0) then -- bullet physics in arcw
+                return
+            end
+        end
+
+        if string.StartWith(weaponClass, "arc9_") then
+            if GetConVar("arc9_bullet_physics"):GetInt() == 1 and data.Spread == Vector(0, 0, 0) then -- bullet physics in arc9
+                return
+            end
+        end
+
+        if entity.deadeye_shotThisTick == nil then entity.deadeye_shotThisTick = false end
+        if entity.deadeye_shotThisTick then return end
+        entity.deadeye_shotThisTick = true
+        timer.Simple(engine.TickInterval()*2, function() entity.deadeye_shotThisTick = false end)
+                                                                                             
+        if #data.AmmoType > 2 then ammotype = data.AmmoType elseif weapon.Primary then ammotype = weapon.Primary.Ammo end
+    end
+
+    local deadeye_data = {}
+    deadeye_data.Entity = entity
+    deadeye_data.Weapon = weapon
+    networkGunshotEvent(deadeye_data)
+
+    data.Spread = Vector(0,0,0)
+
+    return true
 end)
