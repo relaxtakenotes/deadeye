@@ -6,6 +6,7 @@ util.AddNetworkString("deadeye_firebullet")
 util.AddNetworkString("in_deadeye")
 util.AddNetworkString("deadeye_primaryfire_time")
 util.AddNetworkString("deadeye_ragdoll_created")
+util.AddNetworkString("deadeye_destroy_grenade")
 
 local in_deadeye = false
 local in_deadeye_prev = false
@@ -42,6 +43,12 @@ local function restore_vars()
 		convar:SetFloat(accuracy_vars_original[key])
 	end
 end
+
+net.Receive("deadeye_destroy_grenade", function() 
+	local grenade = net.ReadEntity()
+	if grenade:GetClass() != "npc_grenade_frag" then return end
+	grenade:SetSaveValue("m_flDetonateTime", 0)
+end)
 
 hook.Add("CreateEntityRagdoll", "deadeye_ragdoll_notify", function(owner, entity) 
 	net.Start("deadeye_ragdoll_created", true)
@@ -107,7 +114,8 @@ end)
 net.Receive("deadeye_primaryfire_time", function(len, ply)
 	if slowdown and ply:GetActiveWeapon():GetNextPrimaryFire() > 0 then
 		local weapon = ply:GetActiveWeapon()
-		local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+		local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
+
 
 		weapon:SetNextPrimaryFire(CurTime() + delay)
 	end

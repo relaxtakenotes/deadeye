@@ -196,9 +196,11 @@ local function create_deadeye_point()
 		mask = MASK_SHOT_PORTAL
 	})
 
-	local is_explosive = string.find(tr.Entity:GetModel(), "explosive") or string.find(tr.Entity:GetModel(), "gascan") or string.find(tr.Entity:GetModel(), "propane_tank")
+	if tr.Entity == NULL or not IsValid(tr.Entity) then return end
 
-	if not IsValid(tr.Entity) or (not tr.Entity:IsNPC() and not is_explosive and not tr.Entity:IsPlayer()) then return end
+	local is_explosive = string.find(tr.Entity:GetModel(), "explosive") or string.find(tr.Entity:GetModel(), "gascan") or string.find(tr.Entity:GetModel(), "propane_tank") or string.find(tr.Entity:GetClass(), "npc_grenade_frag")
+
+	if not tr.Entity:IsNPC() and not is_explosive and not tr.Entity:IsPlayer() then return end
 
 	added_a_mark = true
 
@@ -210,8 +212,12 @@ local function create_deadeye_point()
 	data = {}
 	data.hitbox_id = tr.HitBox
 	data.initial_rotation = tr.Entity:GetAngles()
-	data.offset = matrix:GetTranslation() - tr.HitPos
-	data.offset:Rotate(-data.initial_rotation)
+	if not string.find(tr.Entity:GetClass(), "npc_grenade_frag") then
+		data.offset = matrix:GetTranslation() - tr.HitPos
+		data.offset:Rotate(-data.initial_rotation)
+	else
+		data.offset = Vector()
+	end
 	data.order = total_mark_count
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
@@ -224,19 +230,17 @@ end
 
 local function get_correct_mark_pos(ent, data)	
 	local matrix = get_hitbox_matrix(ent, data.hitbox_id)
+	local offset = Vector(data.offset:Unpack())
 
 	if not matrix then // invalid cuz not rendered
 		local pos, ang = get_hitbox_info(ent, data.hitbox_id)
-		return pos - relative_pos
+		return pos - offset 
 	end
 
 	local pos = matrix:GetTranslation()
-	local offset = Vector(data.offset:Unpack())
-
 	offset:Rotate(ent:GetAngles())
-	pos = pos - offset
 
-	return pos
+	return pos - offset
 end
 
 local function remove_mark(entindex, index)
@@ -288,7 +292,8 @@ local function on_primary_attack(ent)
 	if not in_deadeye then return end
 
 	local weapon = ent:GetActiveWeapon()
-	local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+	local delay = math.min(math.max((weapon:GetNextPrimaryFire() - CurTime()) * 0.2, 0.01), 0.1)
+
 
 	current_attack_delay = delay
 
@@ -297,6 +302,19 @@ local function on_primary_attack(ent)
 		net.Start("deadeye_primaryfire_time")
 		net.WriteBool(true)
 		net.SendToServer()
+
+		local tr = util.TraceLine({
+			start = LocalPlayer():GetShootPos(),
+			endpos = LocalPlayer():GetShootPos() + LocalPlayer():EyeAngles():Forward()*100000,
+			filter = LocalPlayer(),
+			mask = MASK_SHOT_PORTAL
+		})
+
+		if tr.Entity and tr.Entity:GetClass() == "npc_grenade_frag" then
+			net.Start("deadeye_destroy_grenade")
+			net.WriteEntity(tr.Entity)
+			net.SendToServer()
+		end
 	end
 
 	if weapon:GetNextPrimaryFire() > 0 and delay < 2 and delay > 0 then
@@ -473,15 +491,18 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
 	if current_target.entindex and (release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0)) then
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
-		timer.Simple(0.05, function() no_ammo_spent_timer = 0 end)
+		timer.Simple(0.015, function() no_ammo_spent_timer = 0 end)
 	elseif shooting_quota > 0 and total_mark_count > 0 then
-		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 5, 0, 1)
+		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 7, 0, 1)
 	end
 	
 	if wait_for_target_switch then cmd:RemoveKey(IN_ATTACK) return end
 
 	// deadeye aka aimbot
 	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
+
+		local actual_shoot_position = LocalPlayer():GetShootPos() + LocalPlayer():GetVelocity() * engine.TickInterval() - Entity(current_target.entindex):GetVelocity() * engine.TickInterval()
+
 		local tr = util.TraceLine( {
 			start = LocalPlayer():GetShootPos(),
 			endpos = current_target.pos,
@@ -494,31 +515,27 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 
 		if not deadeye_smooth_aimbot:GetBool() then
-			local aimangles = (current_target.pos - LocalPlayer():GetShootPos()):Angle()
+			local aimangles = (current_target.pos - actual_shoot_position):Angle()
 			cmd:SetViewAngles(aimangles)
 			fix_movement(cmd, ang)
 			already_aiming = true
 		else
-			local aimangles = (current_target.pos - LocalPlayer():GetShootPos() - LocalPlayer():GetVelocity() * RealFrameTime()):Angle()
+			local aimangles = (current_target.pos - actual_shoot_position):Angle()
 
 			if current_attack_delay == 0 then
-				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * 2.5, 0, 1)
+				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * 3 + 0.01, 0, 1)
 			else
-				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * 2.5 + math.Clamp(current_attack_delay, 0, 0.015), 0, 1)
+				aim_lerp_ratio = math.Clamp(aim_lerp_ratio + RealFrameTime() * (3 + current_attack_delay*10) + 0.01, 0, 1)
 			end
 
 			local lerped_angles = LerpAngle(math.ease.InOutCubic(aim_lerp_ratio), start_angle, aimangles)
 			cmd:SetViewAngles(lerped_angles)
 			gAimangles = lerped_angles
 
-			cam.Start3D()
-				local screen_mark_pos = (current_target.pos - LocalPlayer():GetVelocity() * RealFrameTime()):ToScreen()
-			cam.End3D()
-
-			local clamped_distance = math.Clamp(LocalPlayer():GetPos():Distance(current_target.pos), 1, 500)
-			local precision_mult = math.Remap(clamped_distance, 1, 500, 10, 5)
-			if not Vector(ScrW()/2, ScrH()/2):IsEqualTol(Vector(screen_mark_pos.x, screen_mark_pos.y, 0), precision_mult) then
+			if aim_lerp_ratio < 1 then
 				cmd:RemoveKey(IN_ATTACK)
+			else
+				cmd:AddKey(IN_ATTACK)
 			end
 
 			already_aiming = true
@@ -535,6 +552,7 @@ hook.Add("InputMouseApply", "deadeye_freeze_mouse", function(cmd)
 	if in_deadeye and current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) and deadeye_smooth_aimbot:GetBool() then
 		cmd:SetMouseX(0)
 		cmd:SetMouseY(0)
+
 		if not gAimangles:IsZero() then cmd:SetViewAngles(gAimangles) end
 
 		return true
@@ -615,16 +633,14 @@ hook.Add("RenderScreenspaceEffects", "zzzxczxc_deadeye_overlay", function()
 	render.UpdateScreenEffectTexture()
 
 	if pp_lerp > 0 then
-		local stint = tostring(pp_lerp/100)
-		
-		highlight:SetVector("$selfillumtint", Vector(stint, stint, stint))
+		highlight:SetVector("$selfillumtint", Vector(pp_lerp/50, pp_lerp/50, pp_lerp/50))
 		highlight:SetVector("$envmaptint", Vector(pp_lerp, pp_lerp, pp_lerp))
 		
 		cam.Start3D()
 			for _, ent in ipairs(ents.GetAll()) do
 				if ent.deadeye_is_dead then continue end
 				if not ent:GetModel() then continue end
-				local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank")
+				local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank") or string.find(ent:GetModel(), "npc_grenade_frag")
 				if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
 				if ent == LocalPlayer() or ent == LocalPlayer():GetActiveWeapon() then continue end
 				render.MaterialOverride(highlight)
