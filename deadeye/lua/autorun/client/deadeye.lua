@@ -324,7 +324,7 @@ net.Receive("deadeye_shot", function()
 			mask = MASK_SHOT_PORTAL
 		})
 
-		if tr.Entity and tr.Entity:GetClass() == "npc_grenade_frag" then
+		if tr.Entity and tr.Entity != NULL and tr.Entity:GetClass() == "npc_grenade_frag" then
 			net.Start("deadeye_destroy_grenade")
 			net.WriteEntity(tr.Entity)
 			net.SendToServer()
@@ -460,9 +460,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 	end
 
-	//if cmd:KeyDown(IN_ATTACK) and not added_a_mark then
-	//	toggle_deadeye()
-	//end
+	if cmd:KeyDown(IN_ATTACK) and not added_a_mark then
+		toggle_deadeye()
+	end
 
 	if not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 then
 		toggle_deadeye()

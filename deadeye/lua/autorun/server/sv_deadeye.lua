@@ -61,7 +61,7 @@ hook.Add("EntityTakeDamage", "deadeye_randommiss", function(ent, dmg)
 end)
 
 hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
-	if in_deadeye[ent] then
+	if in_deadeye[ply] then
 		local weapon = ply:GetActiveWeapon()
 		ply:SetViewPunchAngles(Angle(0, 0, 0))
 		ply:SetViewPunchVelocity(Angle(0, 0, 0))
