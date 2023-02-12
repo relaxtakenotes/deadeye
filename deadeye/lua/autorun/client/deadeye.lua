@@ -235,7 +235,7 @@ local function create_deadeye_point()
 	else
 		data.offset = Vector()
 	end
-	data.order = total_mark_count
+	data.order = total_mark_count + 1
 
 	if not deadeye_marks[tr.Entity:EntIndex()] then deadeye_marks[tr.Entity:EntIndex()] = {} end
 	table.insert(deadeye_marks[tr.Entity:EntIndex()], data)
@@ -259,9 +259,12 @@ local function get_correct_mark_pos(ent, data)
 end
 
 local function remove_mark(entindex, index)
-	print("removed", Entity(entindex), index)
-	if deadeye_marks[entindex] then table.remove(deadeye_marks[entindex], index) end
-	if deadeye_cached_positions[entindex] then table.remove(deadeye_cached_positions[entindex], index) end
+	if not deadeye_marks[entindex] then return end
+	for i, data in ipairs(deadeye_marks[entindex]) do
+		if data.order == index then
+			table.remove(deadeye_marks[entindex], i) 
+		end
+	end
 end
 
 local function get_first_mark()
@@ -351,7 +354,7 @@ net.Receive("deadeye_shot", function()
 end)
 
 hook.Add("Think", "debug_deadyee", function() 
-	if engine.TickCount() % 20 and deadeye_debug:GetBool() then
+	if engine.TickCount() % 50 and deadeye_debug:GetBool() then
 		print("----------------------------------")
 		print("shooting_quota: ", shooting_quota)
 		print("total_mark_count: ", total_mark_count)
@@ -372,7 +375,7 @@ local already_aiming = false
 local pitch_changing = false
 
 hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
-	// update real view angle for silent aimbot
+	// silent aim routine part 1 start
 	if not deadeye_smooth_aimbot:GetBool() then
 		if (!ang) then ang = cmd:GetViewAngles() end
 		ang = ang + Angle(cmd:GetMouseY() * .023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), cmd:GetMouseX() * -.023 / mouse_sens:GetFloat() * actual_sens:GetFloat(), 0)
@@ -383,7 +386,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		ang.p = math.Clamp(ang.p, -89, 89)
 		cmd:SetViewAngles(ang)
 	end
+	// silent aim routine part 1 end
 
+	// deadeye timer part 1 start
 	if max_deadeye_timer:GetFloat() <= 0 then
 		max_deadeye_timer:SetFloat(1)
 	end
@@ -397,100 +402,124 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		end
 		return 
 	end
+	// deadeye timer part 1 end
 
+	// mark counter start
 	total_mark_count = 0
 	for _, tbl in pairs(deadeye_marks) do
 		total_mark_count = total_mark_count + table.Count(tbl)
 	end
+	// mark counter end
 
+	// reset recoil start
 	if SetViewPunchAngles then
 		SetViewPunchAngles(Angle(0,0,0))
 	end
+	// reset recoil end
 
+	// deadeye timer part 2 start
 	if game.SinglePlayer() then 
 		if not deadeye_infinite:GetBool() then deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, max_deadeye_timer:GetFloat()) end
 	else
 		deadeye_timer = math.Clamp(deadeye_timer - deadeye_timer_fraction * RealFrameTime() / 2, 0, math.Clamp(max_deadeye_timer:GetFloat(), 0, 10))
 	end
+	// deadeye timer part 2 end
 
+	// bg sfx routine start
 	if max_deadeye_timer:GetFloat() - deadeye_timer > max_deadeye_timer:GetFloat() * 0.8 and not pitch_changing then
 		background_sfx:ChangePitch(255, deadeye_timer)
 		pitch_changing = true
 	end
+	// bg sfx routine end
 
+	// sanity start
 	if not LocalPlayer():Alive() then
 		toggle_deadeye()
 	    return
 	end
+	// sanity end
 
-	// causes toggle_deadeye() to activate below
+	// end deadeye if any marks are left start
 	if deadeye_timer <= 0 and shooting_quota <= 0 and total_mark_count > 0 and not cmd:KeyDown(IN_ATTACK) then
 		cmd:AddKey(IN_ATTACK)
 	end
+	// end deadeye if any marks are left end
 
-	// filling the mark cache
+	// mark update routine start
+	deadeye_cached_positions = {}
 	for entindex, data_table in pairs(deadeye_marks) do
 		for i, data in ipairs(data_table) do
 			local mark_cache = {}
 			mark_cache.pos = get_correct_mark_pos(Entity(entindex), data)
 			mark_cache.entindex = entindex
 			mark_cache.data = data
-			mark_cache.index = i
+			mark_cache.index = data.order
 
 			if not deadeye_cached_positions[entindex] then deadeye_cached_positions[entindex] = {} end
 			deadeye_cached_positions[entindex][i] = mark_cache
 		end
 	end
+	// mark update routine end
 
+	// current target routine start
 	if current_target.data then
 		last_target_index = current_target.data.order
 	end
 	current_target = get_first_mark()
+	// current target routine end
 
+	// essential code for smooth aimbot to work right start
 	if (last_target and current_target and current_target.data) and last_target_index != current_target.data.order then
 		start_angle = LocalPlayer():EyeAngles()
 		aim_lerp_ratio = 0
 	end
+	// essential code for smooth aimbot to work right end
 
-	// no more marks, reset the quota and turn off deadeye after we're done shooting
+	// turn off deadeye when we're done start
 	if total_mark_count <= 0 then
 		shooting_quota = 0
 		if added_a_mark or deadeye_timer <= 0 then
 			toggle_deadeye()
 		end
 	end
+	// turn off deadeye when we're done end
 
+	// turn off deadeye if we don't have marks and shot start
 	if cmd:KeyDown(IN_ATTACK) and not added_a_mark then
 		toggle_deadeye()
 	end
+	// turn off deadeye if we don't have marks and shot end
 
+	// no ammo - no deadeye start
 	if not LocalPlayer():GetActiveWeapon().Clip1 or LocalPlayer():GetActiveWeapon():Clip1() == 0 then
 		toggle_deadeye()
 	    return
 	end
+	// no ammo - no deadeye end
 
-	// check if there are more marks than bullets and fill the quota if that's the case... or if we're attacking
+	// fill quota when we can't mark anymore start
 	if total_mark_count >= LocalPlayer():GetActiveWeapon():Clip1() or cmd:KeyDown(IN_ATTACK) then
 		shooting_quota = total_mark_count
 	end
+	// fill quota when we can't mark anymore end
 
-	// we have a quota to work for and we have available marks, shoot!!!
+	// fulfill the quota start
 	if shooting_quota > 0 and total_mark_count > 0 then
 		cmd:AddKey(IN_ATTACK)
 	end
-	//print(total_mark_count, shooting_quota)
+	// fulfill the quota end
 
-	// do the silent aimbot shit
+	// silent aim routine part 2 start
 	if not deadeye_smooth_aimbot:GetBool() then
 		if cmd:CommandNumber() == 0 then
 			cmd:SetViewAngles(ang)
 			return
 		end
 	end
+	// silent aim routine part 2 end
 
-	//print(LocalPlayer():GetActiveWeapon():GetTriggerDelta())
+	// attack button spam routine if our weapon delay is incorrect start
 	local currently_waiting = false
-	// this weird no ammo spent timer thing is to ensure we shoot at all, cuz some weapons just dont give us the proper delay
 	if current_target.entindex and (release_attack or (no_ammo_spent_timer >= 1 and shooting_quota > 0 and total_mark_count > 0)) then
 		if cmd:KeyDown(IN_ATTACK) then cmd:RemoveKey(IN_ATTACK) end
 		timer.Simple(engine.TickInterval()*2, function() no_ammo_spent_timer = 0 end)
@@ -499,10 +528,12 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		no_ammo_spent_timer = math.Clamp(no_ammo_spent_timer + RealFrameTime() * 10, 0, 1)
 		currently_waiting = false
 	end
+	// attack button spam routine if our weapon delay is incorrect end
 	
+	// waiting before switching...
 	if wait_for_target_switch then cmd:RemoveKey(IN_ATTACK) return end
 
-	// deadeye aka aimbot
+	// the main aiming routine start
 	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
 
 		local actual_shoot_position = LocalPlayer():GetShootPos() + LocalPlayer():GetVelocity() * engine.TickInterval() - Entity(current_target.entindex):GetVelocity() * engine.TickInterval()
@@ -549,6 +580,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 		aim_lerp_ratio = 0
 		already_aiming = false
 	end
+	// the main aiming routine end
 end)
 
 hook.Add("InputMouseApply", "deadeye_freeze_mouse", function(cmd)
@@ -575,12 +607,9 @@ net.Receive("deadeye_ragdoll_created", function()
 		owner.deadeye_is_dead = true
 		if IsValid(ragdoll) then
 			deadeye_marks[ragdoll:EntIndex()] = deadeye_marks[owner:EntIndex()]
-			deadeye_cached_positions[ragdoll:EntIndex()] = deadeye_cached_positions[owner:EntIndex()]
-			if deadeye_cached_positions[ragdoll:EntIndex()] then deadeye_cached_positions[ragdoll:EntIndex()].entidx = ragdoll:EntIndex() end
 			transferred_ragdolls[ragdoll:EntIndex()] = true
 		end
 		deadeye_marks[owner:EntIndex()] = nil
-		deadeye_cached_positions[owner:EntIndex()] = nil
 	end)
 end)
 
@@ -592,7 +621,6 @@ hook.Add("EntityRemoved", "deadeye_cleanup_transfer", function(ent)
 	ent.deadeye_is_dead = true
 
 	deadeye_marks[ent:EntIndex()] = nil
-	deadeye_cached_positions[ent:EntIndex()] = nil
 end)
 
 hook.Add("ChatText", "deadeye_hide_cvar_changes", function(index, name, text, type)
@@ -638,8 +666,6 @@ hook.Add("RenderScreenspaceEffects", "zzzxczxc_deadeye_overlay", function()
 			for _, ent in ipairs(ents.GetAll()) do
 				if ent.deadeye_is_dead then continue end
 				if not ent:GetModel() then continue end
-				//local is_explosive = string.find(ent:GetModel(), "explosive") or string.find(ent:GetModel(), "gascan") or string.find(ent:GetModel(), "propane_tank") or string.find(ent:GetModel(), "npc_grenade_frag")
-				//if not transferred_ragdolls[ent:EntIndex()] and (not IsValid(ent) or (not ent:IsNPC() and not is_explosive and not (ent:IsPlayer() and ent != LocalPlayer()))) then continue end
 				if not transferred_ragdolls[ent:EntIndex()] and not is_usable_for_deadeye(ent) then continue end
 				if ent == LocalPlayer() or ent == LocalPlayer():GetActiveWeapon() then continue end
 				render.MaterialOverride(highlight)

@@ -71,14 +71,20 @@ hook.Add("PlayerTick", "deadeye_norecoil", function(ply, cmd)
 			weapon:SetTriggerDelta(1)
 		end
 
-		local delay = (weapon:GetNextPrimaryFire() - CurTime()) * 0.2
-		weapon:SetNextPrimaryFire(CurTime() + delay)
+        if string.StartWith(weapon:GetClass() , "arc9_") then
+            weapon:SetReady(true)
+        end
+
+		//local delay = math.abs((weapon:GetNextPrimaryFire() - CurTime()) * 0.2)
+		//weapon:SetNextPrimaryFire(CurTime() + delay)
+        //print(delay)
 
         if slowdown then game.SetTimeScale(0.2) end
 	end
 
     if game.SinglePlayer() then
     	if in_deadeye[ply] != in_deadeye_prev[ply] and in_deadeye[ply] then
+            ply:GetActiveWeapon():SetNextPrimaryFire(CurTime())
     		zero_out_vars()
     	elseif in_deadeye[ply] != in_deadeye_prev[ply] and not in_deadeye[ply] then
     		restore_vars()
@@ -123,11 +129,13 @@ local function networkGunshotEvent(data)
     if data.Entity:IsPlayer() then
         local delay = 0
         if slowdown then
-    		delay = (data.Weapon:GetNextPrimaryFire() - CurTime()) * 0.2
+    		delay = math.abs((data.Weapon:GetNextPrimaryFire() - CurTime()) * 0.2)
     		data.Weapon:SetNextPrimaryFire(CurTime() + delay)
         else
             delay = data.Weapon:GetNextPrimaryFire() - CurTime()
         end
+
+
 
     	net.Start("deadeye_shot")
     	net.WriteFloat(delay)
