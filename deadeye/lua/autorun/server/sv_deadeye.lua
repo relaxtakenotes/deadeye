@@ -135,8 +135,6 @@ local function networkGunshotEvent(data)
             delay = data.Weapon:GetNextPrimaryFire() - CurTime()
         end
 
-
-
     	net.Start("deadeye_shot")
     	net.WriteFloat(delay)
     	net.Send(data.Entity)

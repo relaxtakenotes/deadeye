@@ -324,7 +324,8 @@ net.Receive("deadeye_shot", function()
 			filter = LocalPlayer(),
 			mins = Vector(-10, -10, -10),
 			maxs = Vector(10, 10, 10),
-			mask = MASK_SHOT_PORTAL
+			mask = MASK_SHOT_PORTAL,
+			ignoreworld = true // u can shoot a grenade through the wall and it'll explode kek
 		})
 
 		if tr.Entity and tr.Entity != NULL and tr.Entity:GetClass() == "npc_grenade_frag" then
@@ -535,8 +536,9 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 
 	// the main aiming routine start
 	if current_target.entindex and (cmd:KeyDown(IN_ATTACK) or already_aiming) then
-
-		local actual_shoot_position = LocalPlayer():GetShootPos() + LocalPlayer():GetVelocity() * engine.TickInterval() - Entity(current_target.entindex):GetVelocity() * engine.TickInterval()
+		local interval = RealFrameTime()
+		if math.abs(interval - engine.TickInterval()) > 0.01 then interval = engine.TickInterval() end
+		local actual_shoot_position = LocalPlayer():GetShootPos() + (LocalPlayer():GetVelocity() - Entity(current_target.entindex):GetVelocity()) * interval
 
 		local tr = util.TraceLine({
 			start = LocalPlayer():GetShootPos(),
@@ -564,6 +566,7 @@ hook.Add("CreateMove", "deadeye_aimbot", function(cmd)
 			end
 
 			local lerped_angles = LerpAngle(math.ease.InOutCubic(aim_lerp_ratio), start_angle, aimangles)
+
 			cmd:SetViewAngles(lerped_angles)
 			gAimangles = lerped_angles
 
