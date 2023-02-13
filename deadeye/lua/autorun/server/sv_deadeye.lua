@@ -327,8 +327,9 @@ hook.Add("EntityFireBullets", "deadeye_EntityFireBullets", function(attacker, da
     deadeye_data.Entity = entity
     deadeye_data.Weapon = weapon
     networkGunshotEvent(deadeye_data)
+    if in_deadeye[entity] then
+        data.Spread = Vector(0,0,0)
 
-    data.Spread = Vector(0,0,0)
-
-    return true
+        return true
+    end
 end)
